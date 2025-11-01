@@ -1,0 +1,70 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+ENV/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Output files
+*.csv
+*.txt
+!requirements.txt
+!*.txt  # Allow txt files in weights/
+*.png
+*.jpg
+*.jpeg
+*.mp4
+*.mov
+*.avi
+*.mkv
+
+# Directories with test data
+cpp_reference/
+cpp_reference_multi_video/
+test_output/
+
+# macOS
+.DS_Store
+
+# Compiled Cython extensions
+*.c
+!pyfaceau/utils/cython_extensions/*.c  # Keep Cython source files
+
+# Model weights (too large for git)
+# Users should download separately
+# weights/*.onnx
+# weights/*.txt
+# weights/*.mlpackage
