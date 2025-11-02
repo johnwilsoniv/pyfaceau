@@ -26,16 +26,30 @@ pyfaceau is a Python reimplementation of the [OpenFace 2.2](https://github.com/T
 
 ### Installation
 
+#### Option 1: Install from PyPI (Recommended)
+
+```bash
+# Install pyfaceau
+pip install pyfaceau
+
+# Download model weights (14MB)
+python -m pyfaceau.download_weights
+
+# Or manually download from GitHub
+# https://github.com/johnwilsoniv/face-analysis/tree/main/S0%20PyfaceAU/weights
+```
+
+#### Option 2: Install from Source
+
 ```bash
 # Clone repository
-git clone https://github.com/yourname/pyfaceau.git
-cd pyfaceau
+git clone https://github.com/johnwilsoniv/face-analysis.git
+cd "face-analysis/S0 PyfaceAU"
 
-# Install dependencies
-pip install -r requirements.txt
+# Install in development mode
+pip install -e .
 
-# Install PyFHOG (required for HOG features)
-pip install pyfhog
+# Model weights are included in the repository
 ```
 
 ### Basic Usage
