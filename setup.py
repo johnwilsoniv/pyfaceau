@@ -17,14 +17,14 @@ setup(
     description="Pure Python OpenFace 2.2 AU extraction with CLNF landmark refinement",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/yourname/pyfaceau",  # Update with actual repository
+    url="https://github.com/johnwilsoniv/pyfaceau",
     packages=find_packages(),
     classifiers=[
         "Development Status :: 5 - Production/Stable",
         "Intended Audience :: Science/Research",
         "Topic :: Scientific/Engineering :: Artificial Intelligence",
         "Topic :: Scientific/Engineering :: Image Recognition",
-        "License :: OSI Approved :: MIT License",
+        "License :: Other/Proprietary License",  # CC BY-NC 4.0 (dual licensing)
         "Programming Language :: Python :: 3",
         "Programming Language :: Python :: 3.8",
         "Programming Language :: Python :: 3.9",
