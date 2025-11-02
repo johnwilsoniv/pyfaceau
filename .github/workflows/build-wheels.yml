@@ -44,8 +44,8 @@ jobs:
           CIBW_ARCHS_LINUX: "x86_64 aarch64"
 
           # Install dependencies before building
-          # Use pip cache for faster builds (cibuildwheel 2.20+ optimization)
-          CIBW_BEFORE_BUILD: "pip install --upgrade pip setuptools wheel && pip install numpy>=1.20.0 Cython>=0.29.0"
+          # Use python -m pip for Windows compatibility (pip can't upgrade itself directly)
+          CIBW_BEFORE_BUILD: "python -m pip install --upgrade pip setuptools wheel && pip install numpy>=1.20.0 Cython>=0.29.0"
 
           # Run tests after building (optional)
           CIBW_TEST_REQUIRES: pytest numpy pandas scipy opencv-python onnxruntime scikit-learn
