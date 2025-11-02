@@ -19,8 +19,18 @@ from openface.Pytorch_Retinaface.utils.box_utils import decode, decode_landm
 from openface.Pytorch_Retinaface.utils.nms.py_cpu_nms import py_cpu_nms
 from openface.Pytorch_Retinaface.data import cfg_mnet
 
-# Import performance profiler
-from performance_profiler import get_profiler
+# Import performance profiler (optional, only for development)
+try:
+    from performance_profiler import get_profiler
+    HAS_PROFILER = True
+except ImportError:
+    HAS_PROFILER = False
+    def get_profiler():
+        """Dummy profiler when performance_profiler is not available"""
+        class DummyProfiler:
+            def record(self, *args, **kwargs):
+                pass
+        return DummyProfiler()
 
 
 class ONNXRetinaFaceDetector:
