@@ -47,7 +47,7 @@ if USE_CYTHON:
 
 setup(
     name="pyfaceau",
-    version="1.0.3",
+    version="1.0.4",
     author="John Wilson",
     author_email="",  # Add email if desired
     description="Pure Python OpenFace 2.2 AU extraction with CLNF landmark refinement",
