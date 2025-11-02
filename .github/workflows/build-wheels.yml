@@ -15,9 +15,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        # Skip macOS for now due to wheel corruption issues
-        # TODO: Fix macOS wheel building (delocate issues)
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest, macos-13, macos-14]  # macos-13 is Intel, macos-14 is ARM64
 
     steps:
       - uses: actions/checkout@v4
@@ -50,9 +48,13 @@ jobs:
           # Use python -m pip for Windows compatibility (pip can't upgrade itself directly)
           CIBW_BEFORE_BUILD: "python -m pip install --upgrade pip setuptools wheel && pip install numpy>=1.20.0 Cython>=0.29.0"
 
-          # Repair wheels to fix ZIP corruption on macOS
-          # delocate-wheel fixes library paths and ensures valid ZIP format
-          CIBW_REPAIR_WHEEL_COMMAND_MACOS: "delocate-wheel --require-archs {delocate_archs} -w {dest_dir} -v {wheel}"
+          # macOS-specific: Use older delocate version (< 1.0) to avoid ZIP corruption
+          # Newer delocate has issues with Cython extensions that cause "Bad magic number" errors
+          CIBW_BEFORE_BUILD_MACOS: "python -m pip install --upgrade pip setuptools wheel && pip install 'delocate<1.0' numpy>=1.20.0 Cython>=0.29.0"
+
+          # Repair wheels to fix library paths on macOS
+          # Using older delocate should prevent ZIP corruption
+          CIBW_REPAIR_WHEEL_COMMAND_MACOS: "delocate-wheel --require-archs {delocate_archs} -w {dest_dir} {wheel}"
 
           # Run tests after building (optional)
           CIBW_TEST_REQUIRES: pytest numpy pandas scipy opencv-python onnxruntime scikit-learn
