@@ -153,14 +153,29 @@ class OpenFaceProcessor:
 
     def clear_cache(self):
         """
-        Clear any internal caches to free memory.
+        Clear cached data and reset running median to free memory between videos.
 
-        Call this if processing many videos with different resolutions
-        and want to free up cache memory between batches.
+        Clears:
+        - stored_features list (can be up to 56 MB for long videos)
+        - running median histograms
+        - face tracking cache
+
+        This should be called between videos to prevent memory accumulation.
         """
-        # PyFaceAU pipeline doesn't currently use caching
-        # This method is kept for API compatibility
-        pass
+        if hasattr(self, 'pipeline') and self.pipeline is not None:
+            # Clear stored features (two-pass processing cache)
+            if hasattr(self.pipeline, 'stored_features'):
+                self.pipeline.stored_features.clear()
+
+            # Reset running median tracker
+            if hasattr(self.pipeline, 'running_median') and self.pipeline.running_median is not None:
+                self.pipeline.running_median.reset()
+
+            # Clear face tracking cache
+            if hasattr(self.pipeline, 'cached_bbox'):
+                self.pipeline.cached_bbox = None
+                self.pipeline.detection_failures = 0
+                self.pipeline.frames_since_detection = 0
 
 
 def process_videos(
