@@ -15,7 +15,9 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-13, macos-14]  # macos-13 is Intel, macos-14 is ARM64
+        # Skip macOS for now due to wheel corruption issues
+        # TODO: Fix macOS wheel building (delocate issues)
+        os: [ubuntu-latest, windows-latest]
 
     steps:
       - uses: actions/checkout@v4
