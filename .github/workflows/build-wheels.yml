@@ -48,6 +48,10 @@ jobs:
           # Use python -m pip for Windows compatibility (pip can't upgrade itself directly)
           CIBW_BEFORE_BUILD: "python -m pip install --upgrade pip setuptools wheel && pip install numpy>=1.20.0 Cython>=0.29.0"
 
+          # Repair wheels to fix ZIP corruption on macOS
+          # delocate-wheel fixes library paths and ensures valid ZIP format
+          CIBW_REPAIR_WHEEL_COMMAND_MACOS: "delocate-wheel --require-archs {delocate_archs} -w {dest_dir} -v {wheel}"
+
           # Run tests after building (optional)
           CIBW_TEST_REQUIRES: pytest numpy pandas scipy opencv-python onnxruntime scikit-learn
           CIBW_TEST_COMMAND: "pytest {project}/tests/test_pipeline.py -v || true"
