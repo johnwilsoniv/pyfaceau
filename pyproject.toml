@@ -1,0 +1,70 @@
+[build-system]
+requires = ["setuptools>=45", "wheel", "Cython>=0.29.0", "numpy>=1.20.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pyfaceau"
+version = "1.0.0"
+description = "Pure Python OpenFace 2.2 AU extraction with CLNF landmark refinement"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "CC BY-NC 4.0"}
+authors = [
+    {name = "John Wilson"}
+]
+keywords = ["facial-action-units", "openface", "computer-vision", "facial-analysis", "emotion-recognition"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Scientific/Engineering :: Image Recognition",
+    "License :: Other/Proprietary License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Operating System :: OS Independent",
+]
+
+dependencies = [
+    "numpy>=1.20.0",
+    "opencv-python>=4.5.0",
+    "pandas>=1.3.0",
+    "onnxruntime>=1.10.0",
+    "scipy>=1.7.0",
+    "scikit-learn>=1.0.0",
+    "tqdm>=4.62.0",
+    "pyfhog>=0.1.0",
+    "Cython>=0.29.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "black>=22.0.0",
+    "flake8>=4.0.0",
+]
+accel = [
+    "onnxruntime-coreml>=1.10.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/johnwilsoniv/face-analysis"
+Documentation = "https://github.com/johnwilsoniv/face-analysis/tree/main/S0%20PyfaceAU"
+Repository = "https://github.com/johnwilsoniv/face-analysis"
+"Bug Tracker" = "https://github.com/johnwilsoniv/face-analysis/issues"
+
+[project.scripts]
+pyfaceau = "pyfaceau.processor:main"
+pyfaceau-gui = "pyfaceau_gui:main"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["pyfaceau*"]
+exclude = ["tests*", "tools*", "benchmarks*"]
+
+[tool.setuptools.package-data]
+pyfaceau = ["*.txt", "*.json", "utils/cython_extensions/*.pyx", "utils/cython_extensions/*.pxd"]
