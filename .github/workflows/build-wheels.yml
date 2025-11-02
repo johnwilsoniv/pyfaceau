@@ -26,7 +26,7 @@ jobs:
           python-version: '3.11'
 
       - name: Install cibuildwheel
-        run: python -m pip install cibuildwheel==2.16.2
+        run: python -m pip install cibuildwheel==2.20.0
 
       - name: Build wheels
         run: python -m cibuildwheel --output-dir wheelhouse
@@ -44,15 +44,20 @@ jobs:
           CIBW_ARCHS_LINUX: "x86_64 aarch64"
 
           # Install dependencies before building
-          CIBW_BEFORE_BUILD: "pip install numpy>=1.20.0 Cython>=0.29.0"
+          # Use pip cache for faster builds (cibuildwheel 2.20+ optimization)
+          CIBW_BEFORE_BUILD: "pip install --upgrade pip setuptools wheel && pip install numpy>=1.20.0 Cython>=0.29.0"
 
           # Run tests after building (optional)
           CIBW_TEST_REQUIRES: pytest numpy pandas scipy opencv-python onnxruntime scikit-learn
           CIBW_TEST_COMMAND: "pytest {project}/tests/test_pipeline.py -v || true"
 
-          # Use manylinux2014 for Linux builds
-          CIBW_MANYLINUX_X86_64_IMAGE: manylinux2014
-          CIBW_MANYLINUX_AARCH64_IMAGE: manylinux2014
+          # Use manylinux_2_28 for better Ubuntu 22.04+ compatibility (cibuildwheel 2.18+)
+          # This includes newer glibc and better ARM64 support
+          CIBW_MANYLINUX_X86_64_IMAGE: manylinux_2_28
+          CIBW_MANYLINUX_AARCH64_IMAGE: manylinux_2_28
+
+          # Enable parallel builds for faster compilation (cibuildwheel 2.17+)
+          CIBW_BUILD_VERBOSITY: 1
 
       - name: Upload wheels
         uses: actions/upload-artifact@v4
