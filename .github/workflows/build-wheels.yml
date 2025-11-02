@@ -20,12 +20,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up QEMU for cross-platform builds (Linux only)
-        if: runner.os == 'Linux'
-        uses: docker/setup-qemu-action@v3
-        with:
-          platforms: arm64
-
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -46,8 +40,9 @@ jobs:
           # Build for ARM64 on macOS
           CIBW_ARCHS_MACOS: "x86_64 arm64"
 
-          # Build for x86_64 and aarch64 on Linux
-          CIBW_ARCHS_LINUX: "x86_64 aarch64"
+          # Build for x86_64 on Linux (skip aarch64 - too slow with QEMU emulation)
+          # TODO: Use GitHub's native ARM64 runners when available
+          CIBW_ARCHS_LINUX: "x86_64"
 
           # Install dependencies before building
           # Use python -m pip for Windows compatibility (pip can't upgrade itself directly)
