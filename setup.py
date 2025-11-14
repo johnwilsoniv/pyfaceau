@@ -47,10 +47,10 @@ if USE_CYTHON:
 
 setup(
     name="pyfaceau",
-    version="1.0.7",
+    version="1.1.0",
     author="John Wilson",
     author_email="",  # Add email if desired
-    description="Pure Python OpenFace 2.2 AU extraction with CLNF landmark refinement",
+    description="Pure Python OpenFace 2.2 AU extraction with PyMTCNN face detection and CLNF refinement",
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/johnwilsoniv/face-analysis",
@@ -83,6 +83,7 @@ setup(
         "tqdm>=4.62.0",
         "pyfhog>=0.1.0",
         "Cython>=0.29.0",
+        "pymtcnn>=1.1.0",  # Cross-platform face detection
     ],
     extras_require={
         "dev": [
@@ -90,8 +91,21 @@ setup(
             "black>=22.0.0",
             "flake8>=4.0.0",
         ],
-        "accel": [
-            "onnxruntime-coreml>=1.10.0",  # macOS CoreML acceleration
+        # Face detection backends
+        "cuda": [
+            "pymtcnn[onnx-gpu]>=1.1.0",  # NVIDIA GPU acceleration
+        ],
+        "coreml": [
+            "pymtcnn[coreml]>=1.1.0",  # Apple Silicon acceleration
+            "coremltools>=7.0",
+        ],
+        "cpu": [
+            "pymtcnn[onnx]>=1.1.0",  # CPU-only face detection
+        ],
+        # All acceleration options
+        "all": [
+            "pymtcnn[all]>=1.1.0",
+            "coremltools>=7.0",
         ],
     },
     entry_points={
