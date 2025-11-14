@@ -49,10 +49,10 @@ accel = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/johnwilsoniv/face-analysis"
-Documentation = "https://github.com/johnwilsoniv/face-analysis/tree/main/S0%20PyfaceAU"
-Repository = "https://github.com/johnwilsoniv/face-analysis"
-"Bug Tracker" = "https://github.com/johnwilsoniv/face-analysis/issues"
+Homepage = "https://github.com/johnwilsoniv/pyfaceau"
+Documentation = "https://github.com/johnwilsoniv/pyfaceau"
+Repository = "https://github.com/johnwilsoniv/pyfaceau"
+"Bug Tracker" = "https://github.com/johnwilsoniv/pyfaceau/issues"
 
 [project.scripts]
 pyfaceau = "pyfaceau.processor:main"
