@@ -8,5 +8,6 @@ for AU01, AU02, and AU23 detection.
 
 from .svr_patch_expert import SVRPatchExpert, SVRPatchExpertLoader
 from .targeted_refiner import TargetedCLNFRefiner
+from .pdm import PDM, check_landmark_quality
 
-__all__ = ['SVRPatchExpert', 'SVRPatchExpertLoader', 'TargetedCLNFRefiner']
+__all__ = ['SVRPatchExpert', 'SVRPatchExpertLoader', 'TargetedCLNFRefiner', 'PDM', 'check_landmark_quality']

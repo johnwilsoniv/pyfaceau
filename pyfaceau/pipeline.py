@@ -3,7 +3,7 @@
 Full Python AU Extraction Pipeline - End-to-End
 
 This script integrates all Python components into a complete AU extraction pipeline:
-1. Face Detection (RetinaFace ONNX)
+1. Face Detection (PyMTCNN with CUDA/CoreML/CPU support)
 2. Landmark Detection (Cunjian PFLD)
 3. 3D Pose Estimation (CalcParams or simplified PnP)
 4. Face Alignment (OpenFace 2.2 algorithm)
@@ -27,7 +27,7 @@ import argparse
 import sys
 
 # Import all pipeline components
-from pyfaceau.detectors.retinaface import ONNXRetinaFaceDetector
+from pyfaceau.detectors.pymtcnn_detector import PyMTCNNDetector, PYMTCNN_AVAILABLE
 from pyfaceau.detectors.pfld import CunjianPFLDDetector
 from pyfaceau.alignment.calc_params import CalcParams
 from pyfaceau.features.pdm import PDMParser
@@ -79,14 +79,13 @@ class FullPythonAUPipeline:
 
     def __init__(
         self,
-        retinaface_model: str,
         pfld_model: str,
         pdm_file: str,
         au_models_dir: str,
         triangulation_file: str,
+        mtcnn_backend: str = 'auto',
         patch_expert_file: Optional[str] = None,
         use_calc_params: bool = True,
-        use_coreml: bool = True,
         track_faces: bool = True,
         use_batched_predictor: bool = True,
         use_clnf_refinement: bool = True,
@@ -94,17 +93,16 @@ class FullPythonAUPipeline:
         verbose: bool = True
     ):
         """
-        Initialize the full Python AU pipeline with lazy initialization for CoreML
+        Initialize the full Python AU pipeline with PyMTCNN face detection
 
         Args:
-            retinaface_model: Path to RetinaFace ONNX model
             pfld_model: Path to PFLD ONNX model
             pdm_file: Path to PDM shape model
             au_models_dir: Directory containing AU SVR models
             triangulation_file: Path to triangulation file for masking
+            mtcnn_backend: PyMTCNN backend ('auto', 'cuda', 'coreml', 'cpu') (default: 'auto')
             patch_expert_file: Path to patch expert file for CLNF refinement (optional)
             use_calc_params: Use full CalcParams vs. simplified PnP (default: True)
-            use_coreml: Enable CoreML Neural Engine acceleration (default: True)
             track_faces: Use face tracking (detect once, track between frames) (default: True)
             use_batched_predictor: Use optimized batched AU predictor (2-5x faster) (default: True)
             use_clnf_refinement: Enable CLNF landmark refinement (default: True)
@@ -115,7 +113,6 @@ class FullPythonAUPipeline:
 
         self.verbose = verbose
         self.use_calc_params = use_calc_params
-        self.use_coreml = use_coreml
         self.track_faces = track_faces
         self.use_batched_predictor = use_batched_predictor and USING_BATCHED_PREDICTOR
         self.use_clnf_refinement = use_clnf_refinement
@@ -126,9 +123,9 @@ class FullPythonAUPipeline:
         self.detection_failures = 0
         self.frames_since_detection = 0
 
-        # Store initialization parameters (lazy initialization for CoreML)
+        # Store initialization parameters (lazy initialization)
         self._init_params = {
-            'retinaface_model': retinaface_model,
+            'mtcnn_backend': mtcnn_backend,
             'pfld_model': pfld_model,
             'pdm_file': pdm_file,
             'au_models_dir': au_models_dir,
@@ -180,27 +177,34 @@ class FullPythonAUPipeline:
                 print("")
 
             # Get initialization parameters
-            retinaface_model = self._init_params['retinaface_model']
+            mtcnn_backend = self._init_params['mtcnn_backend']
             pfld_model = self._init_params['pfld_model']
             pdm_file = self._init_params['pdm_file']
             au_models_dir = self._init_params['au_models_dir']
             triangulation_file = self._init_params['triangulation_file']
 
-            # Component 1: Face Detection (with CoreML support)
+            # Component 1: Face Detection (PyMTCNN with multi-backend support)
             if self.verbose:
-                print("[1/8] Loading face detector (RetinaFace ONNX)...")
-                if self.use_coreml:
-                    print("  CoreML: Enabled (initializing in worker thread)")
-                else:
-                    print("  CoreML: Disabled (CPU mode)")
+                print("[1/8] Loading face detector (PyMTCNN)...")
+                print(f"  Backend: {mtcnn_backend}")
 
-            self.face_detector = ONNXRetinaFaceDetector(
-                retinaface_model,
-                use_coreml=self.use_coreml,
+            if not PYMTCNN_AVAILABLE:
+                raise ImportError(
+                    "PyMTCNN is required. Install with:\n"
+                    "  pip install pymtcnn[onnx-gpu]  # For CUDA\n"
+                    "  pip install pymtcnn[coreml]    # For Apple Silicon\n"
+                    "  pip install pymtcnn[onnx]      # For CPU"
+                )
+
+            self.face_detector = PyMTCNNDetector(
+                backend=mtcnn_backend,
                 confidence_threshold=0.5,
-                nms_threshold=0.4
+                nms_threshold=0.7,
+                verbose=self.verbose
             )
             if self.verbose:
+                backend_info = self.face_detector.get_backend_info()
+                print(f"  Active backend: {backend_info}")
                 print("Face detector loaded\n")
 
             # Component 2: Landmark Detection
@@ -270,7 +274,8 @@ class FullPythonAUPipeline:
             model_parser = OF22ModelParser(au_models_dir)
             self.au_models = model_parser.load_all_models(
                 use_recommended=True,
-                use_combined=True
+                use_combined=True,
+                verbose=self.verbose
             )
             if self.verbose:
                 print(f"Loaded {len(self.au_models)} AU models")
@@ -323,11 +328,6 @@ class FullPythonAUPipeline:
         """
         Process a video and extract AUs for all frames
 
-        ARCHITECTURE (CoreML mode):
-        - Main thread: Opens VideoCapture (macOS NSRunLoop requirement), reads frames
-        - Worker thread: Initializes CoreML, processes frames
-        - Communication: Queues (main→worker: frames, worker→main: results)
-
         Args:
             video_path: Path to input video
             output_csv: Optional path to save CSV results
@@ -336,213 +336,12 @@ class FullPythonAUPipeline:
         Returns:
             DataFrame with columns: frame, timestamp, success, AU01_r, AU02_r, ...
         """
-        import threading
-        import queue
-
         # Reset stored features for new video processing
         self.stored_features = []
 
-        # CoreML mode: Use queue-based architecture
-        # Main thread handles VideoCapture, worker thread handles CoreML processing
-        if self.use_coreml and threading.current_thread() == threading.main_thread():
-            if self.verbose:
-                print("[CoreML Mode] Queue-based processing:")
-                print("  Main thread: VideoCapture (macOS NSRunLoop)")
-                print("  Worker thread: CoreML + processing\n")
-
-            # Validate path
-            video_path = Path(video_path)
-            if not video_path.exists():
-                raise FileNotFoundError(f"Video not found: {video_path}")
-
-            # Open VideoCapture in MAIN thread (macOS requirement!)
-            cap = cv2.VideoCapture(str(video_path))
-            fps = cap.get(cv2.CAP_PROP_FPS)
-            total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-
-            if max_frames:
-                total_frames = min(total_frames, max_frames)
-
-            if self.verbose:
-                print(f"Processing video: {video_path.name}")
-                print("=" * 80)
-                print(f"Video info:")
-                print(f"  FPS: {fps:.2f}")
-                print(f"  Total frames: {total_frames}")
-                print(f"  Duration: {total_frames/fps:.2f} seconds")
-                print("")
-
-            # Create queues for communication
-            frame_queue = queue.Queue(maxsize=10)  # Limit buffering
-            result_queue = queue.Queue()
-            error_container = {'error': None}
-
-            # Start worker thread for processing
-            def worker():
-                try:
-                    self._process_frames_worker(frame_queue, result_queue, fps)
-                except Exception as e:
-                    error_container['error'] = e
-                    import traceback
-                    traceback.print_exc()
-
-            worker_thread = threading.Thread(target=worker, daemon=False, name="CoreMLWorker")
-            worker_thread.start()
-
-            # Main thread: Read frames and send to worker
-            frame_idx = 0
-            try:
-                if self.verbose:
-                    print(f"[Main Thread] Reading frames from video...")
-                while True:
-                    ret, frame = cap.read()
-                    if not ret or (max_frames and frame_idx >= max_frames):
-                        break
-
-                    timestamp = frame_idx / fps
-                    if self.verbose and frame_idx < 3:
-                        print(f"[Main Thread] Sending frame {frame_idx} to worker queue")
-                    frame_queue.put((frame_idx, timestamp, frame))
-                    frame_idx += 1
-
-                if self.verbose:
-                    print(f"[Main Thread] Finished reading {frame_idx} frames, sending termination signal")
-
-            finally:
-                # Signal worker to finish
-                frame_queue.put(None)
-                cap.release()
-                if self.verbose:
-                    print(f"[Main Thread] VideoCapture released, waiting for worker to finish...")
-
-            # Wait for worker to complete
-            worker_thread.join()
-            if self.verbose:
-                print(f"[Main Thread] Worker thread completed")
-
-            # Check for errors
-            if error_container['error']:
-                raise error_container['error']
-
-            # Collect results from worker
-            results = []
-            while not result_queue.empty():
-                results.append(result_queue.get())
-
-            # Sort by frame index (in case of out-of-order processing)
-            results.sort(key=lambda x: x['frame'])
-
-            # Convert to DataFrame
-            df = pd.DataFrame(results)
-
-            # Apply post-processing (cutoff adjustment, temporal smoothing)
-            # This is CRITICAL for dynamic AU accuracy!
-            if self.verbose:
-                print("\nApplying post-processing (cutoff adjustment, temporal smoothing)...")
-            df = self.finalize_predictions(df)
-
-            # Statistics
-            total_processed = df['success'].sum()
-            total_failed = len(df) - total_processed
-
-            if self.verbose:
-                print("")
-                print("=" * 80)
-                print("PROCESSING COMPLETE")
-                print("=" * 80)
-                print(f"Total frames processed: {total_processed}")
-                print(f"Failed frames: {total_failed}")
-                if len(df) > 0:
-                    print(f"Success rate: {total_processed/len(df)*100:.1f}%")
-                print("")
-
-            # Save to CSV if requested
-            if output_csv:
-                df.to_csv(output_csv, index=False)
-                if self.verbose:
-                    print(f"Results saved to: {output_csv}")
-                    print("")
-
-            return df
-
-        # Direct processing (CPU mode - no threading needed)
+        # Use direct processing implementation
         return self._process_video_impl(video_path, output_csv, max_frames)
 
-    def _process_frames_worker(self, frame_queue, result_queue, fps):
-        """
-        Worker thread method for processing frames (CoreML mode)
-
-        This runs in a worker thread and:
-        1. Initializes CoreML and all components (lazy init in worker thread)
-        2. Receives frames from frame_queue
-        3. Processes each frame
-        4. Sends results to result_queue
-
-        Args:
-            frame_queue: Queue receiving (frame_idx, timestamp, frame) tuples from main thread
-            result_queue: Queue for sending results back to main thread
-            fps: Video framerate (for progress reporting)
-        """
-        import queue
-
-        # Initialize all components in worker thread (CoreML loads here!)
-        self._initialize_components()
-
-        if self.verbose:
-            print("[Worker Thread] Components initialized")
-            if self.face_detector:
-                print(f"[Worker Thread] Detector backend: {self.face_detector.backend}")
-            print("[Worker Thread] Starting frame processing loop...")
-            print("")
-
-        # Process frames from queue
-        total_processed = 0
-        total_failed = 0
-
-        while True:
-            try:
-                # Get frame from queue (blocks until available)
-                if self.verbose and total_processed + total_failed < 3:
-                    print(f"[Worker Thread] Waiting for frame from queue...")
-                item = frame_queue.get(timeout=1.0)
-                if self.verbose and total_processed + total_failed < 3:
-                    print(f"[Worker Thread] Received item from queue")
-
-                # Check for termination signal
-                if item is None:
-                    break
-
-                frame_idx, timestamp, frame = item
-
-                # Process frame
-                frame_result = self._process_frame(frame, frame_idx, timestamp)
-                result_queue.put(frame_result)
-
-                # Update statistics
-                if frame_result['success']:
-                    total_processed += 1
-                else:
-                    total_failed += 1
-
-                # Progress update
-                if self.verbose and (frame_idx + 1) % 10 == 0:
-                    print(f"[Worker] Processed {frame_idx + 1} frames - "
-                          f"Success: {total_processed}, Failed: {total_failed}")
-
-            except queue.Empty:
-                # Timeout waiting for frame - continue
-                continue
-            except Exception as e:
-                # Error processing frame - log and continue
-                print(f"[Worker] Error processing frame: {e}")
-                import traceback
-                traceback.print_exc()
-                continue
-
-        if self.verbose:
-            print(f"\n[Worker Thread] Finished processing")
-            print(f"  Total processed: {total_processed}")
-            print(f"  Total failed: {total_failed}")
 
     def _process_video_impl(
         self,
@@ -653,10 +452,10 @@ class FullPythonAUPipeline:
         Process a single frame through the complete pipeline
 
         Face Tracking Strategy (when enabled):
-        - Frame 0: Run RetinaFace detection, cache bbox
+        - Frame 0: Run PyMTCNN detection, cache bbox
         - Frame 1+: Try cached bbox first
           - If landmark/alignment succeeds → keep using cached bbox
-          - If landmark/alignment fails → re-run RetinaFace, update cache
+          - If landmark/alignment fails → re-run PyMTCNN, update cache
 
         This provides ~3x speedup by skipping expensive face detection!
 
@@ -680,7 +479,7 @@ class FullPythonAUPipeline:
 
             # Step 1: Face Detection (with tracking optimization)
             if self.track_faces and self.cached_bbox is not None:
-                # Try using cached bbox (skip expensive RetinaFace!)
+                # Try using cached bbox (skip expensive PyMTCNN!)
                 if self.verbose and frame_idx < 3:
                     print(f"[Frame {frame_idx}] Step 1: Using cached bbox (tracking mode)")
                 bbox = self.cached_bbox
@@ -688,7 +487,7 @@ class FullPythonAUPipeline:
                 self.frames_since_detection += 1
 
             if need_detection or bbox is None:
-                # First frame OR previous tracking failed - run RetinaFace
+                # First frame OR previous tracking failed - run PyMTCNN
                 if self.verbose and frame_idx < 3:
                     print(f"[Frame {frame_idx}] Step 1: Detecting face with {self.face_detector.backend}...")
                 detections, _ = self.face_detector.detect_faces(frame)
@@ -1005,8 +804,9 @@ Examples:
     parser.add_argument('--simple-pose', action='store_true', help='Use simplified pose estimation')
 
     # Model paths (with defaults)
-    parser.add_argument('--retinaface', default='weights/retinaface_mobilenet025_coreml.onnx',
-                        help='RetinaFace ONNX model path')
+    parser.add_argument('--backend', default='auto',
+                        choices=['auto', 'cuda', 'coreml', 'cpu', 'onnx'],
+                        help='PyMTCNN backend (default: auto)')
     parser.add_argument('--pfld', default='weights/pfld_cunjian.onnx',
                         help='PFLD ONNX model path')
     parser.add_argument('--pdm', default='weights/In-the-wild_aligned_PDM_68.txt',
@@ -1026,11 +826,11 @@ Examples:
     # Initialize pipeline
     try:
         pipeline = FullPythonAUPipeline(
-            retinaface_model=args.retinaface,
             pfld_model=args.pfld,
             pdm_file=args.pdm,
             au_models_dir=args.au_models,
             triangulation_file=args.triangulation,
+            mtcnn_backend=args.backend,
             use_calc_params=not args.simple_pose,
             verbose=True
         )
