@@ -29,8 +29,14 @@ pyfaceau is a Python reimplementation of the [OpenFace 2.2](https://github.com/T
 #### Option 1: Install from PyPI (Recommended)
 
 ```bash
-# Install pyfaceau
-pip install pyfaceau
+# For NVIDIA GPU (CUDA):
+pip install pyfaceau[cuda]
+
+# For Apple Silicon (M1/M2/M3):
+pip install pyfaceau[coreml]
+
+# For CPU-only:
+pip install pyfaceau[cpu]
 
 # Download model weights (14MB)
 python -m pyfaceau.download_weights
@@ -39,12 +45,14 @@ python -m pyfaceau.download_weights
 # https://github.com/johnwilsoniv/face-analysis/tree/main/S0%20PyfaceAU/weights
 ```
 
+**Note:** PyFaceAU v1.1.0+ uses [PyMTCNN](https://pypi.org/project/pymtcnn/) for cross-platform face detection with CUDA/CoreML/CPU support.
+
 #### Option 2: Install from Source
 
 ```bash
 # Clone repository
 git clone https://github.com/johnwilsoniv/face-analysis.git
-cd "face-analysis/S0 PyfaceAU"
+cd "face-analysis/pyfaceau"
 
 # Install in development mode
 pip install -e .
@@ -59,13 +67,13 @@ pip install -e .
 ```python
 from pyfaceau import ParallelAUPipeline
 
-# Initialize parallel pipeline 
+# Initialize parallel pipeline
 pipeline = ParallelAUPipeline(
-    retinaface_model='weights/retinaface_mobilenet025_coreml.onnx',
     pfld_model='weights/pfld_cunjian.onnx',
     pdm_file='weights/In-the-wild_aligned_PDM_68.txt',
     au_models_dir='path/to/AU_predictors',
     triangulation_file='weights/tris_68_full.txt',
+    mtcnn_backend='auto',  # or 'cuda', 'coreml', 'cpu'
     num_workers=6,  # Adjust based on CPU cores
     batch_size=30
 )
@@ -80,20 +88,19 @@ print(f"Processed {len(results)} frames")
 # Typical output: ~28-50 FPS depending on CPU cores
 ```
 
-#### Standard Mode (4.6 FPS)
+#### Standard Mode (5-35 FPS depending on backend)
 
 ```python
 from pyfaceau import FullPythonAUPipeline
 
 # Initialize standard pipeline
 pipeline = FullPythonAUPipeline(
-    retinaface_model='weights/retinaface_mobilenet025_coreml.onnx',
     pfld_model='weights/pfld_cunjian.onnx',
     pdm_file='weights/In-the-wild_aligned_PDM_68.txt',
     au_models_dir='path/to/AU_predictors',
     triangulation_file='weights/tris_68_full.txt',
+    mtcnn_backend='auto',  # Automatically selects best backend
     use_calc_params=True,
-    use_coreml=True,  # macOS only
     verbose=False
 )
 
@@ -103,6 +110,11 @@ results = pipeline.process_video(
     output_csv='results.csv'
 )
 ```
+
+**Performance by backend:**
+- CUDA (NVIDIA GPU): ~35 FPS
+- CoreML (Apple Silicon): ~20-25 FPS
+- CPU: ~5-10 FPS
 
 ### Example Output
 
@@ -121,7 +133,7 @@ pyfaceau replicates the complete OpenFace 2.2 AU extraction pipeline:
 ```
 Video Input
     ↓
-Face Detection (RetinaFace ONNX)
+Face Detection (PyMTCNN - CUDA/CoreML/CPU)
     ↓
 Landmark Detection (PFLD 68-point)
     ↓

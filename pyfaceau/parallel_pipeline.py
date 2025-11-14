@@ -15,11 +15,11 @@ Usage:
     from pyauface.parallel_pipeline import ParallelAUPipeline
 
     pipeline = ParallelAUPipeline(
-        retinaface_model='weights/retinaface.onnx',
         pfld_model='weights/pfld.onnx',
         pdm_file='weights/pdm.txt',
         au_models_dir='weights/AU_predictors',
         triangulation_file='weights/tris.txt',
+        mtcnn_backend='auto',  # or 'cuda', 'coreml', 'cpu'
         num_workers=6  # Number of parallel workers
     )
 
@@ -56,11 +56,11 @@ class ParallelAUPipeline:
 
     def __init__(
         self,
-        retinaface_model: str,
         pfld_model: str,
         pdm_file: str,
         au_models_dir: str,
         triangulation_file: str,
+        mtcnn_backend: str = 'auto',
         num_workers: int = 6,
         batch_size: int = 30,
         use_calc_params: bool = True,
@@ -72,11 +72,11 @@ class ParallelAUPipeline:
         Initialize parallel pipeline
 
         Args:
-            retinaface_model: Path to RetinaFace ONNX model
             pfld_model: Path to PFLD ONNX model
             pdm_file: Path to PDM shape model
             au_models_dir: Directory containing AU SVR models
             triangulation_file: Path to triangulation file
+            mtcnn_backend: PyMTCNN backend ('auto', 'cuda', 'coreml', 'cpu') (default: 'auto')
             num_workers: Number of parallel worker processes (default: 6)
             batch_size: Frames to process per batch (default: 30)
             use_calc_params: Use full CalcParams for pose estimation
@@ -90,7 +90,7 @@ class ParallelAUPipeline:
 
         # Store initialization parameters
         self.init_params = {
-            'retinaface_model': retinaface_model,
+            'mtcnn_backend': mtcnn_backend,
             'pfld_model': pfld_model,
             'pdm_file': pdm_file,
             'au_models_dir': au_models_dir,
@@ -108,13 +108,12 @@ class ParallelAUPipeline:
             print("")
 
         self.main_pipeline = FullPythonAUPipeline(
-            retinaface_model=retinaface_model,
             pfld_model=pfld_model,
             pdm_file=pdm_file,
             au_models_dir=au_models_dir,
             triangulation_file=triangulation_file,
+            mtcnn_backend=mtcnn_backend,
             use_calc_params=use_calc_params,
-            use_coreml=False,  # Use CPU for multiprocessing (avoid CoreML threading issues)
             track_faces=track_faces,
             use_batched_predictor=use_batched_predictor,
             verbose=verbose

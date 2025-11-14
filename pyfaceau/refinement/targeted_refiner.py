@@ -111,9 +111,9 @@ class TargetedCLNFRefiner:
         """
         Project refined landmarks onto PDM to enforce shape constraints.
 
-        This ensures refined landmarks remain anatomically plausible by:
-        1. Finding best-fit PDM parameters using calc_params
-        2. Reconstructing landmarks from those parameters using calc_shape_3d
+        This ensures refined landmarks remain anatomically plausible by projecting
+        them onto the learned PCA shape space and constraining shape parameters
+        to stay within 3 standard deviations (similar to OpenFace 2.2 C++ CLNF).
 
         Args:
             landmarks: Refined landmarks (68, 2)
@@ -121,19 +121,9 @@ class TargetedCLNFRefiner:
         Returns:
             PDM-constrained landmarks (68, 2)
         """
-        # Find best PDM parameters (calc_params accepts (68, 2) landmarks)
-        params_global, params_local = self.pdm.calc_params(landmarks)
-
-        # Reconstruct 3D landmarks from parameters
-        # calc_shape_3d returns flat array (204,) = 68 landmarks * 3 coords (X, Y, Z)
-        landmarks_3d_flat = self.pdm.calc_shape_3d(params_local)
-
-        # Reshape to (68, 3)
-        landmarks_3d = landmarks_3d_flat.reshape(68, 3)
-
-        # Project back to 2D using global params
-        # For simplicity, just use X and Y coordinates
-        constrained = landmarks_3d[:, :2]  # Take only X, Y (drop Z)
+        # Project landmarks onto PDM shape space with 3 std dev constraint
+        # This regularizes landmarks to stay within plausible facial shapes
+        constrained = self.pdm.project_to_shape_space(landmarks, n_std_devs=3.0)
 
         return constrained
 
