@@ -203,7 +203,7 @@ class OF22ModelParser:
 
         return model
 
-    def load_all_models(self, use_recommended: bool = True, use_combined: bool = True) -> Dict[str, Dict]:
+    def load_all_models(self, use_recommended: bool = True, use_combined: bool = True, verbose: bool = False) -> Dict[str, Dict]:
         """
         Load all available AU models
 
@@ -212,6 +212,7 @@ class OF22ModelParser:
                             from AU_all_best.txt configuration
             use_combined: If True, load from svr_combined (higher quality, trained on
                          combined datasets)
+            verbose: If True, print detailed loading information
 
         Returns:
             Dictionary mapping AU names to model dicts
@@ -224,16 +225,19 @@ class OF22ModelParser:
                 use_dynamic = None if use_recommended else True
                 model = self.load_au_model(au_name, use_dynamic=use_dynamic, use_combined=use_combined)
                 models[au_name] = model
-                print(f"Loaded {au_name} ({model['model_type']}): cutoff={model['cutoff']:.2f}, "
-                      f"means={model['means'].shape}, SV={model['support_vectors'].shape}, "
-                      f"bias={model['bias']:.4f} [{model['filename']}]")
+                if verbose:
+                    print(f"Loaded {au_name} ({model['model_type']}): cutoff={model['cutoff']:.2f}, "
+                          f"means={model['means'].shape}, SV={model['support_vectors'].shape}, "
+                          f"bias={model['bias']:.4f} [{model['filename']}]")
             except FileNotFoundError as e:
                 failed_aus.append(au_name)
-                print(f"✗ Failed to load {au_name}: {e}")
+                if verbose:
+                    print(f"✗ Failed to load {au_name}: {e}")
 
-        print(f"\nLoaded {len(models)}/{len(self.available_aus)} AU models")
-        if failed_aus:
-            print(f"Failed AUs: {failed_aus}")
+        if verbose:
+            print(f"\nLoaded {len(models)}/{len(self.available_aus)} AU models")
+            if failed_aus:
+                print(f"Failed AUs: {failed_aus}")
 
         return models
 

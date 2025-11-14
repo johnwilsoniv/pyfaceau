@@ -203,7 +203,7 @@ def test_pdm_parser():
     pdm = PDMParser(pdm_file)
 
     # Load CSV to get PDM params
-    csv_file = "/Users/johnwilsoniv/Documents/SplitFace Open3/S1 Face Mirror/of22_validation/IMG_0942_left_mirrored.csv"
+    csv_file = "/Users/johnwilsoniv/Documents/SplitFace Open3/FaceMirror/S1 Face Mirror/of22_validation/IMG_0942_left_mirrored.csv"
     print(f"\nLoading CSV: {csv_file}")
     df = pd.read_csv(csv_file)
 
