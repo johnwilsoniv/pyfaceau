@@ -549,7 +549,7 @@ def main():
 
     # Configuration
     video_path = '/Users/johnwilsoniv/Documents/SplitFace Open3/D Normal Pts/IMG_0434.MOV'
-    cpp_csv_path = '/Users/johnwilsoniv/Documents/SplitFace Open3/S0 PyfaceAU/cpp_reference/IMG_0434.csv'
+    cpp_csv_path = '/Users/johnwilsoniv/Documents/SplitFace Open3/pyfaceau/cpp_reference/IMG_0434.csv'
     max_frames = None  # Process all 972 frames
 
     # Step 1: Load C++ reference

@@ -130,8 +130,7 @@ class OpenFaceProcessor:
             df = self.pipeline.process_video(
                 video_path=str(video_path),
                 output_csv=str(output_csv_path),
-                max_frames=None,
-                progress_callback=progress_callback
+                max_frames=None
             )
 
             success_count = df['success'].sum()
