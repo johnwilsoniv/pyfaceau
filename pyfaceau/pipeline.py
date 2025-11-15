@@ -213,20 +213,14 @@ class FullPythonAUPipeline:
                 print(f"  Active backend: {backend_info}")
                 print("Face detector loaded\n")
 
-            # Component 2: Landmark Detection (CLNF - OpenFace approach)
-            # Determine model directory from pdm_file path
-            from pathlib import Path
-            model_dir = Path(pdm_file).parent
-
+            # Component 2: Landmark Detection (CLNF - OpenFace approach via pyclnf)
             if self.verbose:
-                print("[2/8] Loading CLNF landmark detector...")
-                print(f"  PDM file: {Path(pdm_file).name}")
-                print(f"  Patch experts: {Path(patch_expert_file).name}")
+                print("[2/8] Loading CLNF landmark detector (pyclnf)...")
                 print(f"  Max iterations: {max_clnf_iterations}")
                 print(f"  Convergence threshold: {clnf_convergence_threshold} pixels")
 
             self.landmark_detector = CLNF(
-                model_dir=str(model_dir),
+                # Use default model_dir - pyclnf finds its own models from PyPI installation
                 max_iterations=max_clnf_iterations,
                 convergence_threshold=clnf_convergence_threshold,
                 detector=False  # Disable built-in PyMTCNN (pyfaceau handles detection)
