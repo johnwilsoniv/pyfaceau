@@ -16,9 +16,9 @@ from tqdm import tqdm
 WEIGHTS_BASE_URL = "https://github.com/johnwilsoniv/face-analysis/raw/main/S0%20PyfaceAU/weights/"
 
 REQUIRED_WEIGHTS = {
-    "retinaface_mobilenet025_coreml.onnx": "1.7MB - Face detection model",
-    "pfld_cunjian.onnx": "2.8MB - Landmark detection model",
-    "In-the-wild_aligned_PDM_68.txt": "67KB - PDM parameters",
+    # Note: Face detection uses PyMTCNN (installed separately)
+    # Note: Landmark detection uses CLNF (Constrained Local Neural Fields)
+    "In-the-wild_aligned_PDM_68.txt": "67KB - PDM shape model",
     "svr_patches_0.25_general.txt": "1.1MB - CLNF patch experts",
     "tris_68_full.txt": "1KB - Triangulation data",
 }
