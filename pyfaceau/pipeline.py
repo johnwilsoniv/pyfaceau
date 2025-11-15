@@ -25,10 +25,11 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 import argparse
 import sys
+import time
 
 # Import all pipeline components
 from pyfaceau.detectors.pymtcnn_detector import PyMTCNNDetector, PYMTCNN_AVAILABLE
-from pyfaceau.detectors.pfld import CunjianPFLDDetector
+from pyclnf import CLNF
 from pyfaceau.alignment.calc_params import CalcParams
 from pyfaceau.features.pdm import PDMParser
 from pyfaceau.alignment.face_aligner import OpenFace22FaceAligner
@@ -79,44 +80,46 @@ class FullPythonAUPipeline:
 
     def __init__(
         self,
-        pfld_model: str,
         pdm_file: str,
         au_models_dir: str,
         triangulation_file: str,
+        patch_expert_file: str,
         mtcnn_backend: str = 'auto',
-        patch_expert_file: Optional[str] = None,
         use_calc_params: bool = True,
         track_faces: bool = True,
         use_batched_predictor: bool = True,
-        use_clnf_refinement: bool = True,
-        enforce_clnf_pdm: bool = False,
+        max_clnf_iterations: int = 10,
+        clnf_convergence_threshold: float = 0.01,
+        debug_mode: bool = False,
         verbose: bool = True
     ):
         """
-        Initialize the full Python AU pipeline with PyMTCNN face detection
+        Initialize the full Python AU pipeline (OpenFace-compatible)
+
+        Architecture: PyMTCNN → CLNF → AU Prediction
+        (matches OpenFace C++ 2.2 pipeline)
 
         Args:
-            pfld_model: Path to PFLD ONNX model
             pdm_file: Path to PDM shape model
             au_models_dir: Directory containing AU SVR models
             triangulation_file: Path to triangulation file for masking
+            patch_expert_file: Path to CLNF patch expert file
             mtcnn_backend: PyMTCNN backend ('auto', 'cuda', 'coreml', 'cpu') (default: 'auto')
-            patch_expert_file: Path to patch expert file for CLNF refinement (optional)
-            use_calc_params: Use full CalcParams vs. simplified PnP (default: True)
-            track_faces: Use face tracking (detect once, track between frames) (default: True)
-            use_batched_predictor: Use optimized batched AU predictor (2-5x faster) (default: True)
-            use_clnf_refinement: Enable CLNF landmark refinement (default: True)
-            enforce_clnf_pdm: Enforce PDM constraints after CLNF refinement (default: False)
+            use_calc_params: Use full CalcParams for pose estimation (default: True)
+            track_faces: Use face tracking between frames (default: True)
+            use_batched_predictor: Use optimized batched AU predictor (default: True)
+            max_clnf_iterations: Maximum CLNF optimization iterations (default: 10)
+            clnf_convergence_threshold: CLNF convergence threshold in pixels (default: 0.01)
+            debug_mode: Enable debug mode for diagnostics (default: False)
             verbose: Print progress messages (default: True)
         """
         import threading
 
         self.verbose = verbose
+        self.debug_mode = debug_mode
         self.use_calc_params = use_calc_params
         self.track_faces = track_faces
         self.use_batched_predictor = use_batched_predictor and USING_BATCHED_PREDICTOR
-        self.use_clnf_refinement = use_clnf_refinement
-        self.enforce_clnf_pdm = enforce_clnf_pdm
 
         # Face tracking: cache bbox and only re-detect on failure (3x speedup!)
         self.cached_bbox = None
@@ -126,11 +129,12 @@ class FullPythonAUPipeline:
         # Store initialization parameters (lazy initialization)
         self._init_params = {
             'mtcnn_backend': mtcnn_backend,
-            'pfld_model': pfld_model,
             'pdm_file': pdm_file,
             'au_models_dir': au_models_dir,
             'triangulation_file': triangulation_file,
             'patch_expert_file': patch_expert_file,
+            'max_clnf_iterations': max_clnf_iterations,
+            'clnf_convergence_threshold': clnf_convergence_threshold,
         }
 
         # Components will be initialized on first use (in worker thread if CoreML)
@@ -178,10 +182,12 @@ class FullPythonAUPipeline:
 
             # Get initialization parameters
             mtcnn_backend = self._init_params['mtcnn_backend']
-            pfld_model = self._init_params['pfld_model']
             pdm_file = self._init_params['pdm_file']
             au_models_dir = self._init_params['au_models_dir']
             triangulation_file = self._init_params['triangulation_file']
+            patch_expert_file = self._init_params['patch_expert_file']
+            max_clnf_iterations = self._init_params['max_clnf_iterations']
+            clnf_convergence_threshold = self._init_params['clnf_convergence_threshold']
 
             # Component 1: Face Detection (PyMTCNN with multi-backend support)
             if self.verbose:
@@ -207,12 +213,26 @@ class FullPythonAUPipeline:
                 print(f"  Active backend: {backend_info}")
                 print("Face detector loaded\n")
 
-            # Component 2: Landmark Detection
+            # Component 2: Landmark Detection (CLNF - OpenFace approach)
+            # Determine model directory from pdm_file path
+            from pathlib import Path
+            model_dir = Path(pdm_file).parent
+
             if self.verbose:
-                print("[2/8] Loading landmark detector (PFLD)...")
-            self.landmark_detector = CunjianPFLDDetector(pfld_model)
+                print("[2/8] Loading CLNF landmark detector...")
+                print(f"  PDM file: {Path(pdm_file).name}")
+                print(f"  Patch experts: {Path(patch_expert_file).name}")
+                print(f"  Max iterations: {max_clnf_iterations}")
+                print(f"  Convergence threshold: {clnf_convergence_threshold} pixels")
+
+            self.landmark_detector = CLNF(
+                model_dir=str(model_dir),
+                max_iterations=max_clnf_iterations,
+                convergence_threshold=clnf_convergence_threshold,
+                detector=False  # Disable built-in PyMTCNN (pyfaceau handles detection)
+            )
             if self.verbose:
-                print(f"Landmark detector loaded: {self.landmark_detector}\n")
+                print(f"CLNF detector loaded\n")
 
             # Component 3: PDM Parser (moved before CLNF to support PDM enforcement)
             if self.verbose:
@@ -221,13 +241,13 @@ class FullPythonAUPipeline:
             if self.verbose:
                 print(f"PDM loaded: {self.pdm_parser.mean_shape.shape[0]//3} landmarks\n")
 
-            # Initialize CalcParams if using full pose estimation OR CLNF+PDM enforcement
-            if self.use_calc_params or self.enforce_clnf_pdm:
+            # Initialize CalcParams for pose estimation
+            if self.use_calc_params:
                 self.calc_params = CalcParams(self.pdm_parser)
             else:
                 self.calc_params = None
 
-            # Component 4: Face Aligner (needed for CLNF PDM enforcement)
+            # Component 4: Face Aligner
             if self.verbose:
                 print("[4/8] Initializing face aligner...")
             self.face_aligner = OpenFace22FaceAligner(
@@ -238,28 +258,8 @@ class FullPythonAUPipeline:
             if self.verbose:
                 print("Face aligner initialized\n")
 
-            # Component 2.5: CLNF Refiner (optional, after PDM for constraint support)
-            if self.use_clnf_refinement:
-                if self.verbose:
-                    print("[2.5/8] Loading CLNF landmark refiner...")
-                patch_expert_file = self._init_params['patch_expert_file']
-                if patch_expert_file is None:
-                    patch_expert_file = 'weights/svr_patches_0.25_general.txt'
-
-                # Pass CalcParams (has CalcParams/CalcShape methods) for PDM enforcement
-                # Note: calc_params is initialized above if enforce_clnf_pdm is enabled
-                pdm_for_clnf = self.calc_params if (self.enforce_clnf_pdm and self.calc_params) else None
-                self.clnf_refiner = TargetedCLNFRefiner(
-                    patch_expert_file,
-                    search_window=3,
-                    pdm=pdm_for_clnf,
-                    enforce_pdm=self.enforce_clnf_pdm and (pdm_for_clnf is not None)
-                )
-                if self.verbose:
-                    pdm_status = " + PDM constraints" if (self.enforce_clnf_pdm and pdm_for_clnf) else ""
-                    print(f"CLNF refiner loaded with {len(self.clnf_refiner.patch_experts)} patch experts{pdm_status}\n")
-            else:
-                self.clnf_refiner = None
+            # Note: CLNF landmark detector is already initialized above (Component 2)
+            # No separate refiner needed - CLNF does full detection from PDM mean shape
 
             # Component 5: Triangulation
             if self.verbose:
@@ -318,6 +318,74 @@ class FullPythonAUPipeline:
                 print("")
 
             self._components_initialized = True
+
+    def _initialize_landmarks_from_bbox(self, bbox):
+        """
+        Initialize 2D landmarks from PDM mean shape scaled to fit bbox.
+
+        This provides the initial landmark positions for CLNF optimization,
+        following the OpenFace approach of starting from the mean shape.
+
+        CRITICAL: Applies CLNF bbox correction to match C++ OpenFace behavior
+        (from OpenFace C++ lines 386-396). This hardcoded correction adjusts
+        the MTCNN bbox to CLNF's expected format.
+
+        Args:
+            bbox: Face bounding box [x_min, y_min, x_max, y_max]
+
+        Returns:
+            landmarks_2d: Initial 68-point landmarks (68, 2) as [x, y]
+        """
+        # Apply CLNF bbox correction (matching C++ OpenFace lines 386-396)
+        # This converts MTCNN bbox format to what CLNF expects
+        bbox_x_min, bbox_y_min, bbox_x_max, bbox_y_max = bbox
+        bbox_width = bbox_x_max - bbox_x_min
+        bbox_height = bbox_y_max - bbox_y_min
+
+        # C++ correction coefficients
+        corrected_x = bbox_x_min + bbox_width * -0.0075
+        corrected_y = bbox_y_min + bbox_height * 0.2459
+        corrected_width = bbox_width * 1.0323
+        corrected_height = bbox_height * 0.7751
+
+        # Use corrected bbox for initialization
+        bbox_x_min = corrected_x
+        bbox_y_min = corrected_y
+        bbox_width = corrected_width
+        bbox_height = corrected_height
+        bbox_x_max = bbox_x_min + bbox_width
+        bbox_y_max = bbox_y_min + bbox_height
+
+        # Get PDM mean shape (204 values = 68 landmarks × 3 for x, y, z)
+        # PDM format: [x0, y0, x1, y1, ..., x67, y67, z0, z1, ..., z67]
+        # First 136 values are all X,Y coordinates
+        mean_shape_2d = self.landmark_detector.pdm.mean_shape[:136].reshape(68, 2)
+
+        # Compute bbox properties (using corrected bbox)
+        bbox_center_x = (bbox_x_min + bbox_x_max) / 2
+        bbox_center_y = (bbox_y_min + bbox_y_max) / 2
+
+        # Compute mean shape properties
+        mean_x_min = mean_shape_2d[:, 0].min()
+        mean_x_max = mean_shape_2d[:, 0].max()
+        mean_y_min = mean_shape_2d[:, 1].min()
+        mean_y_max = mean_shape_2d[:, 1].max()
+        mean_width = mean_x_max - mean_x_min
+        mean_height = mean_y_max - mean_y_min
+        mean_center_x = (mean_x_min + mean_x_max) / 2
+        mean_center_y = (mean_y_min + mean_y_max) / 2
+
+        # Compute scale to fit bbox (use smaller dimension for proper aspect ratio)
+        scale_x = bbox_width / mean_width
+        scale_y = bbox_height / mean_height
+        scale = min(scale_x, scale_y)
+
+        # Scale and translate mean shape to fit bbox
+        landmarks_2d = mean_shape_2d.copy()
+        landmarks_2d[:, 0] = (landmarks_2d[:, 0] - mean_center_x) * scale + bbox_center_x
+        landmarks_2d[:, 1] = (landmarks_2d[:, 1] - mean_center_y) * scale + bbox_center_y
+
+        return landmarks_2d
 
     def process_video(
         self,
@@ -446,7 +514,8 @@ class FullPythonAUPipeline:
         self,
         frame: np.ndarray,
         frame_idx: int,
-        timestamp: float
+        timestamp: float,
+        return_debug: bool = False
     ) -> Dict:
         """
         Process a single frame through the complete pipeline
@@ -463,21 +532,31 @@ class FullPythonAUPipeline:
             frame: BGR image
             frame_idx: Frame index
             timestamp: Frame timestamp in seconds
+            return_debug: If True, return debug info with component outputs
 
         Returns:
             Dictionary with frame results (success, AUs, etc.)
+            If return_debug=True, also includes 'debug_info' key
         """
+        # Ensure components are initialized (lazy initialization)
+        self._initialize_components()
+
         result = {
             'frame': frame_idx,
             'timestamp': timestamp,
             'success': False
         }
 
+        # Initialize debug info if requested
+        debug_info = {} if (return_debug or self.debug_mode) else None
+
         try:
             bbox = None
             need_detection = True
 
             # Step 1: Face Detection (with tracking optimization)
+            t0 = time.time() if debug_info is not None else None
+
             if self.track_faces and self.cached_bbox is not None:
                 # Try using cached bbox (skip expensive PyMTCNN!)
                 if self.verbose and frame_idx < 3:
@@ -498,6 +577,13 @@ class FullPythonAUPipeline:
                     # No face detected - clear cache
                     self.cached_bbox = None
                     self.detection_failures += 1
+                    if debug_info is not None:
+                        debug_info['face_detection'] = {
+                            'num_faces': 0,
+                            'bbox': None,
+                            'time_ms': (time.time() - t0) * 1000 if t0 else 0
+                        }
+                        result['debug_info'] = debug_info
                     return result
 
                 # Use primary face (highest confidence)
@@ -509,19 +595,41 @@ class FullPythonAUPipeline:
                     self.cached_bbox = bbox
                     self.frames_since_detection = 0
 
-            # Step 2: Detect landmarks
+            if debug_info is not None:
+                debug_info['face_detection'] = {
+                    'num_faces': 1,
+                    'bbox': bbox.copy(),
+                    'cached': not need_detection,
+                    'time_ms': (time.time() - t0) * 1000 if t0 else 0
+                }
+
+            # Step 2: Detect landmarks using CLNF (OpenFace approach)
+            t0 = time.time() if debug_info is not None else None
             if self.verbose and frame_idx < 3:
-                print(f"[Frame {frame_idx}] Step 2: Detecting landmarks...")
+                print(f"[Frame {frame_idx}] Step 2: Detecting landmarks with CLNF...")
 
             try:
-                landmarks_68, _ = self.landmark_detector.detect_landmarks(frame, bbox)
+                # Convert bbox from [x_min, y_min, x_max, y_max] to [x, y, width, height] for pyclnf
+                bbox_x, bbox_y = bbox[0], bbox[1]
+                bbox_w, bbox_h = bbox[2] - bbox[0], bbox[3] - bbox[1]
+                bbox_pyclnf = (bbox_x, bbox_y, bbox_w, bbox_h)
 
-                # Optional CLNF refinement for critical landmarks
-                if self.use_clnf_refinement and self.clnf_refiner is not None:
-                    landmarks_68 = self.clnf_refiner.refine_landmarks(frame, landmarks_68)
+                # Detect landmarks with CLNF optimization
+                landmarks_68, info = self.landmark_detector.fit(frame, bbox_pyclnf)
+                converged = info['converged']
+                num_iterations = info['iterations']
 
                 if self.verbose and frame_idx < 3:
-                    print(f"[Frame {frame_idx}] Step 2: Got {len(landmarks_68)} landmarks")
+                    print(f"[Frame {frame_idx}] Step 2: Got {len(landmarks_68)} landmarks (CLNF converged: {converged}, iterations: {num_iterations})")
+
+                if debug_info is not None:
+                    debug_info['landmark_detection'] = {
+                        'num_landmarks': len(landmarks_68),
+                        'landmarks_68': landmarks_68.copy(),
+                        'clnf_converged': converged,
+                        'clnf_iterations': num_iterations,
+                        'time_ms': (time.time() - t0) * 1000 if t0 else 0
+                    }
             except Exception as e:
                 # Landmark detection failed with cached bbox - re-run face detection
                 if self.track_faces and not need_detection:
@@ -541,16 +649,18 @@ class FullPythonAUPipeline:
                     self.frames_since_detection = 0
 
                     # Retry landmark detection with new bbox
-                    landmarks_68, _ = self.landmark_detector.detect_landmarks(frame, bbox)
-
-                    # Optional CLNF refinement for critical landmarks
-                    if self.use_clnf_refinement and self.clnf_refiner is not None:
-                        landmarks_68 = self.clnf_refiner.refine_landmarks(frame, landmarks_68)
+                    bbox_x, bbox_y = bbox[0], bbox[1]
+                    bbox_w, bbox_h = bbox[2] - bbox[0], bbox[3] - bbox[1]
+                    bbox_pyclnf = (bbox_x, bbox_y, bbox_w, bbox_h)
+                    landmarks_68, info = self.landmark_detector.fit(frame, bbox_pyclnf)
+                    converged = info['converged']
+                    num_iterations = info['iterations']
                 else:
                     # Not tracking or already re-detected - fail
                     raise
 
             # Step 3: Estimate 3D pose
+            t0 = time.time() if debug_info is not None else None
             if self.verbose and frame_idx < 3:
                 print(f"[Frame {frame_idx}] Step 3: Estimating 3D pose...")
             if self.use_calc_params and self.calc_params:
@@ -573,7 +683,18 @@ class FullPythonAUPipeline:
                 ty = (bbox[1] + bbox[3]) / 2
                 params_local = np.zeros(34)
 
+            if debug_info is not None:
+                debug_info['pose_estimation'] = {
+                    'scale': float(scale),
+                    'rotation': [float(rx), float(ry), float(rz)],
+                    'translation': [float(tx), float(ty)],
+                    'params_local_shape': params_local.shape,
+                    'used_calc_params': self.use_calc_params and (self.calc_params is not None),
+                    'time_ms': (time.time() - t0) * 1000 if t0 else 0
+                }
+
             # Step 4: Align face
+            t0 = time.time() if debug_info is not None else None
             if self.verbose and frame_idx < 3:
                 print(f"[Frame {frame_idx}] Step 4: Aligning face...")
             aligned_face = self.face_aligner.align_face(
@@ -588,7 +709,14 @@ class FullPythonAUPipeline:
             if self.verbose and frame_idx < 3:
                 print(f"[Frame {frame_idx}] Step 4: Aligned face shape: {aligned_face.shape}")
 
+            if debug_info is not None:
+                debug_info['alignment'] = {
+                    'aligned_face_shape': aligned_face.shape,
+                    'time_ms': (time.time() - t0) * 1000 if t0 else 0
+                }
+
             # Step 5: Extract HOG features
+            t0 = time.time() if debug_info is not None else None
             if self.verbose and frame_idx < 3:
                 print(f"[Frame {frame_idx}] Step 5: Extracting HOG features...")
             hog_features = pyfhog.extract_fhog_features(
@@ -599,7 +727,14 @@ class FullPythonAUPipeline:
             if self.verbose and frame_idx < 3:
                 print(f"[Frame {frame_idx}] Step 5: HOG features shape: {hog_features.shape}")
 
+            if debug_info is not None:
+                debug_info['hog_extraction'] = {
+                    'hog_shape': hog_features.shape,
+                    'time_ms': (time.time() - t0) * 1000 if t0 else 0
+                }
+
             # Step 6: Extract geometric features
+            t0 = time.time() if debug_info is not None else None
             if self.verbose and frame_idx < 3:
                 print(f"[Frame {frame_idx}] Step 6: Extracting geometric features...")
             geom_features = self.pdm_parser.extract_geometric_features(params_local)
@@ -610,7 +745,14 @@ class FullPythonAUPipeline:
             hog_features = hog_features.astype(np.float32)
             geom_features = geom_features.astype(np.float32)
 
+            if debug_info is not None:
+                debug_info['geometric_extraction'] = {
+                    'geom_shape': geom_features.shape,
+                    'time_ms': (time.time() - t0) * 1000 if t0 else 0
+                }
+
             # Step 7: Update running median
+            t0 = time.time() if debug_info is not None else None
             if self.verbose and frame_idx < 3:
                 print(f"[Frame {frame_idx}] Step 7: Updating running median...")
             update_histogram = (frame_idx % 2 == 1)  # Every 2nd frame
@@ -619,11 +761,19 @@ class FullPythonAUPipeline:
             if self.verbose and frame_idx < 3:
                 print(f"[Frame {frame_idx}] Step 7: Running median shape: {running_median.shape}")
 
+            if debug_info is not None:
+                debug_info['running_median'] = {
+                    'median_shape': running_median.shape,
+                    'update_histogram': update_histogram,
+                    'time_ms': (time.time() - t0) * 1000 if t0 else 0
+                }
+
             # Store features for two-pass processing (OpenFace reprocesses first 3000 frames)
             if frame_idx < self.max_stored_frames:
                 self.stored_features.append((frame_idx, hog_features.copy(), geom_features.copy()))
 
             # Step 8: Predict AUs
+            t0 = time.time() if debug_info is not None else None
             if self.verbose and frame_idx < 3:
                 print(f"[Frame {frame_idx}] Step 8: Predicting AUs...")
             au_results = self._predict_aus(
@@ -632,9 +782,19 @@ class FullPythonAUPipeline:
                 running_median
             )
 
+            if debug_info is not None:
+                debug_info['au_prediction'] = {
+                    'num_aus': len([k for k in au_results.keys() if k.startswith('AU')]),
+                    'time_ms': (time.time() - t0) * 1000 if t0 else 0
+                }
+
             # Add AU predictions to result
             result.update(au_results)
             result['success'] = True
+
+            # Add debug info to result if requested
+            if debug_info is not None:
+                result['debug_info'] = debug_info
 
         except Exception as e:
             if self.verbose:
