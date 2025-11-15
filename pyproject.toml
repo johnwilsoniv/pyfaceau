@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pyfaceau"
-version = "1.0.9"
+version = "1.1.0"
 description = "Pure Python OpenFace 2.2 AU extraction with CLNF landmark refinement"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -36,6 +36,7 @@ dependencies = [
     "tqdm>=4.62.0",
     "pyfhog>=0.1.0",
     "Cython>=0.29.0",
+    "pyclnf>=0.2.0",
 ]
 
 [project.optional-dependencies]
