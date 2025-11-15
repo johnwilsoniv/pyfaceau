@@ -76,15 +76,13 @@ class OpenFaceProcessor:
         if self.verbose:
             print("Initializing PyFaceAU (OpenFace 2.2 Python replacement)...")
 
-        # Initialize the PyFaceAU pipeline
+        # Initialize the PyFaceAU pipeline (OpenFace-compatible: PyMTCNN → CLNF → AU)
         self.pipeline = FullPythonAUPipeline(
-            retinaface_model=str(weights_dir / 'retinaface_mobilenet025_coreml.onnx'),
-            pfld_model=str(weights_dir / 'pfld_cunjian.onnx'),
             pdm_file=str(weights_dir / 'In-the-wild_aligned_PDM_68.txt'),
             au_models_dir=str(weights_dir / 'AU_predictors'),
             triangulation_file=str(weights_dir / 'tris_68_full.txt'),
-            patch_expert_file=str(weights_dir / 'svr_patches_0.25_general.txt') if use_clnf_refinement else None,
-            use_clnf_refinement=use_clnf_refinement,
+            patch_expert_file=str(weights_dir / 'svr_patches_0.25_general.txt'),
+            mtcnn_backend='auto',  # PyMTCNN for face detection
             use_batched_predictor=True,
             verbose=verbose
         )
