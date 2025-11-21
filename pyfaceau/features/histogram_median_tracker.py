@@ -89,19 +89,17 @@ class HistogramBasedMedianTracker:
 
             self.hist_count += 1
 
-        # Compute median (matches C++: always sets median, even on frame 0)
-        # On frame 0 (hist_count==0), C++ sets median=descriptor.clone()
-        # On frame 1+ with hist_count==1, C++ also uses descriptor directly
-        # Otherwise, compute from histogram
-        if self.hist_count == 0:
-            # Frame 0: histogram not updated yet, use descriptor directly
-            self.current_median = features.copy()
-        elif self.hist_count == 1:
-            # Frame 1: histogram updated once, still use descriptor directly (matches C++)
-            self.current_median = features.copy()
-        else:
-            # Frame 2+: compute from histogram
-            self._compute_median()
+            # Compute median ONLY when updating histogram (matches C++ behavior)
+            # C++ only updates median inside the if(frames_tracking % 2 == 1) block
+            # On hist_count==1: use descriptor directly
+            # On hist_count>=2: compute from histogram
+            if self.hist_count == 1:
+                # First update: use descriptor directly (matches C++ if(hist_count == 1) median = descriptor.clone())
+                self.current_median = features.copy()
+            else:
+                # Frame 2+: compute from histogram
+                self._compute_median()
+        # When update_histogram=False, keep the previous median (matches C++ behavior)
 
     def _compute_median(self, first_descriptor: np.ndarray = None) -> None:
         """

@@ -164,25 +164,71 @@ class PDMParser:
 
         return reconstructed
 
-    def extract_geometric_features(self, pdm_params: np.ndarray) -> np.ndarray:
+    def compute_params_local(self, landmarks: np.ndarray) -> np.ndarray:
+        """
+        Compute principal component coefficients from landmarks.
+
+        This projects the landmarks back onto the principal components,
+        giving the params_local that C++ uses in geometric features.
+
+        Formula: params_local = pinv(princ_comp) × landmarks
+
+        Args:
+            landmarks: (204,) array of 3D landmarks
+
+        Returns:
+            (34,) array of principal component coefficients
+        """
+        if landmarks.ndim == 2:
+            landmarks = landmarks.flatten()
+
+        if landmarks.shape[0] != self.princ_comp.shape[0]:
+            raise ValueError(
+                f"Expected {self.princ_comp.shape[0]} landmark values, "
+                f"got {landmarks.shape[0]}"
+            )
+
+        # Compute pseudoinverse if not already cached
+        if not hasattr(self, '_princ_comp_pinv'):
+            self._princ_comp_pinv = np.linalg.pinv(self.princ_comp)
+
+        # Project landmarks onto principal components
+        params_local = np.dot(self._princ_comp_pinv, landmarks)
+
+        return params_local
+
+    def extract_geometric_features(self, params_local: np.ndarray) -> np.ndarray:
         """
         Extract geometric features for AU prediction
 
         Matches OpenFace 2.2's geom_descriptor_frame construction:
-        1. Reconstruct landmarks from PDM
-        2. Concatenate: [reconstructed_landmarks, pdm_params]
+        1. Reconstruct landmarks: locs = princ_comp @ params_local
+        2. Concatenate: [locs, params_local]
+
+        IMPORTANT: params_local should come from CalcParams, NOT from CSV p_i values!
+        C++ FaceAnalyser calls CalcParams on detected landmarks to get params_local,
+        which differs from the values stored in CSV (those come from CLNF tracking).
 
         Args:
-            pdm_params: (34,) array of PDM parameters
+            params_local: (34,) array of PDM parameters from CalcParams
 
         Returns:
-            Geometric feature vector matching OF2.2 format
+            (238,) geometric feature vector: [landmarks(204), params_local(34)]
         """
-        # Reconstruct landmarks
-        reconstructed_landmarks = self.reconstruct_from_params(pdm_params)
+        if params_local.ndim == 2:
+            params_local = params_local.flatten()
 
-        # Concatenate: [landmarks, params]
-        geom_features = np.concatenate([reconstructed_landmarks, pdm_params])
+        if params_local.shape[0] != self.princ_comp.shape[1]:
+            raise ValueError(
+                f"Expected {self.princ_comp.shape[1]} params, "
+                f"got {params_local.shape[0]}"
+            )
+
+        # Reconstruct landmarks: princ_comp (204, 34) × params (34,) = (204,)
+        reconstructed_landmarks = np.dot(self.princ_comp, params_local)
+
+        # Concatenate: [landmarks, params_local]
+        geom_features = np.concatenate([reconstructed_landmarks, params_local])
 
         return geom_features
 

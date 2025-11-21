@@ -100,12 +100,12 @@ class OpenFace22FaceAligner:
         source_rigid = self._extract_rigid_points(landmarks_68)
         dest_rigid = self._extract_rigid_points(self.reference_shape)
 
-        # Compute scale (no rotation from Kabsch)
-        scale_identity = self._align_shapes_with_scale(source_rigid, dest_rigid)
-        scale = scale_identity[0, 0]  # Extract scale from identity matrix
+        # Compute scale (no rotation from Kabsch) - matching working commit approach
+        scale_identity = self._compute_scale_only(source_rigid, dest_rigid)
+        scale = scale_identity
 
-        # Apply INVERSE of CSV p_rz rotation
-        # CSV p_rz describes rotation FROM canonical TO tilted
+        # Apply INVERSE of p_rz rotation
+        # p_rz describes rotation FROM canonical TO tilted
         # We need rotation FROM tilted TO canonical, which is -p_rz
         angle = -p_rz
         cos_a = np.cos(angle)
@@ -117,7 +117,7 @@ class OpenFace22FaceAligner:
         # Combine scale and rotation
         scale_rot_matrix = scale * R
 
-        # Build 2×3 affine warp matrix
+        # Build 2×3 affine warp matrix using pose translation
         warp_matrix = self._build_warp_matrix(scale_rot_matrix, pose_tx, pose_ty)
 
         # Apply affine transformation
@@ -239,6 +239,37 @@ class OpenFace22FaceAligner:
 
         return warp_matrix
 
+    def _build_warp_matrix_centroid(self, scale_rot: np.ndarray, src_centroid: np.ndarray, dst_centroid: np.ndarray) -> np.ndarray:
+        """
+        Build 2×3 affine warp matrix using source and destination centroids
+
+        This is the corrected version that uses rigid point centroids instead of
+        pose translation parameters, which gives better alignment with C++ OpenFace.
+
+        Args:
+            scale_rot: (2, 2) similarity transform matrix (scale × rotation)
+            src_centroid: (2,) centroid of source rigid points
+            dst_centroid: (2,) centroid of destination rigid points
+
+        Returns:
+            (2, 3) affine warp matrix for cv2.warpAffine
+        """
+        # Initialize 2×3 warp matrix
+        warp_matrix = np.zeros((2, 3), dtype=np.float32)
+
+        # Copy scale-rotation to first 2×2 block
+        warp_matrix[:2, :2] = scale_rot
+
+        # Transform source centroid through scale-rotation
+        T_src = scale_rot @ src_centroid
+
+        # Translation: map src_centroid to dst_centroid, then center in output
+        # dst_centroid is in PDM space (centered around 0), so add output_center
+        warp_matrix[0, 2] = dst_centroid[0] - T_src[0] + self.output_width / 2
+        warp_matrix[1, 2] = dst_centroid[1] - T_src[1] + self.output_height / 2
+
+        return warp_matrix
+
     def _extract_rigid_points(self, landmarks: np.ndarray) -> np.ndarray:
         """
         Extract 24 rigid points from 68 landmarks
@@ -286,37 +317,34 @@ class OpenFace22FaceAligner:
 
         # Rotation matrix: R = V^T × corr × U^T
         # OpenFace C++ uses: R = svd.vt.t() * corr * svd.u.t()
+        # But we need to transpose to match C++ behavior
+        # Testing showed R.T gives correct rotation direction (+18° vs -18°)
         R = Vt.T @ corr @ U.T
 
-        return R
+        return R.T  # Transpose to match C++ rotation direction
 
-    def _align_shapes_with_scale(self, src: np.ndarray, dst: np.ndarray) -> np.ndarray:
+    def _align_shapes_with_scale_and_rotation(self, src: np.ndarray, dst: np.ndarray) -> np.ndarray:
         """
-        Compute similarity transform (scale only, NO rotation) between two point sets
+        Compute similarity transform (scale + rotation via Kabsch) between two point sets
 
-        CRITICAL FIX: Since CSV landmarks are PDM-reconstructed (via CalcShape2D),
-        they are already in canonical orientation. We only need scale + translation,
-        NOT rotation via Kabsch.
+        This matches C++ AlignShapesWithScale in RotationHelpers.h lines 195-241.
 
-        Background: FaceAnalyser.cpp calls CalcParams TWICE:
-        1. On raw landmarks → params_global₁ → CalcShape2D → reconstructed landmarks (CSV output)
-        2. On reconstructed landmarks → params_global₂ → AlignFace
+        CRITICAL: p_rz is NOT used for alignment! C++ computes rotation from landmarks
+        using Kabsch algorithm.
 
-        The second CalcParams produces near-zero rotation because reconstructed landmarks
-        are already canonical. Our Python uses CSV landmarks (already canonical), so we
-        skip rotation computation entirely.
-
-        Algorithm:
+        Algorithm (matching C++):
         1. Mean-normalize both src and dst
         2. Compute RMS scale for each
-        3. Return: (s_dst / s_src) × Identity (scale only, no rotation)
+        3. Normalize by scale
+        4. Compute rotation via Kabsch2D
+        5. Return: (s_dst / s_src) × R_kabsch
 
         Args:
             src: (N, 2) source points (detected landmarks)
             dst: (N, 2) destination points (reference shape)
 
         Returns:
-            (2, 2) similarity transform matrix (scale × identity)
+            (2, 2) similarity transform matrix (scale × rotation)
         """
         n = src.shape[0]
 
@@ -335,18 +363,20 @@ class OpenFace22FaceAligner:
         dst_mean_normed[:, 1] -= mean_dst_y
 
         # 2. Compute RMS scale for each point set
-        # OpenFace C++ uses: sqrt(sum(points^2) / n)
+        # C++ RotationHelpers.h line 221-222
         src_sq = src_mean_normed ** 2
         dst_sq = dst_mean_normed ** 2
 
         s_src = np.sqrt(np.sum(src_sq) / n)
         s_dst = np.sqrt(np.sum(dst_sq) / n)
 
-        # 3. Normalize by scale
+        # 3. Normalize by scale (C++ line 224-225)
         src_norm = src_mean_normed / s_src
         dst_norm = dst_mean_normed / s_dst
 
-        # 3. Return scale only (no rotation computed via Kabsch)
-        # Rotation will be provided externally from CSV p_rz
+        # 4. Get rotation via Kabsch2D (C++ line 230)
+        R = self._align_shapes_kabsch_2d(src_norm, dst_norm)
+
+        # 5. Return scale * rotation (C++ line 233)
         scale = s_dst / s_src
-        return scale * np.eye(2, dtype=np.float32)
+        return scale * R
