@@ -717,7 +717,9 @@ class FullPythonAUPipeline:
                 aligned_face,
                 cell_size=8
             )
-            hog_features = hog_features.flatten()  # Should be 4464 dims
+            # Apply transpose to match C++ OpenFace HOG ordering
+            # pyfhog outputs in (rows, cols, bins) but C++ uses different order
+            hog_features = hog_features.reshape(12, 12, 31).transpose(1, 0, 2).flatten()  # 4464 dims
             if self.verbose and frame_idx < 3:
                 print(f"[Frame {frame_idx}] Step 5: HOG features shape: {hog_features.shape}")
 
