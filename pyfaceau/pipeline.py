@@ -223,7 +223,8 @@ class FullPythonAUPipeline:
                 # Use default model_dir - pyclnf finds its own models from PyPI installation
                 max_iterations=max_clnf_iterations,
                 convergence_threshold=clnf_convergence_threshold,
-                detector=False  # Disable built-in PyMTCNN (pyfaceau handles detection)
+                detector=False,  # Disable built-in PyMTCNN (pyfaceau handles detection)
+                use_eye_refinement=True  # Enable hierarchical eye model refinement
             )
             if self.verbose:
                 print(f"CLNF detector loaded\n")
