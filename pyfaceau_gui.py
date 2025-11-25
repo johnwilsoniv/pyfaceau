@@ -1,4 +1,4 @@
-/re#!/usr/bin/env python3
+#!/usr/bin/env python3
 """
 PyFaceAU - GUI Interface for Action Unit Extraction
 
