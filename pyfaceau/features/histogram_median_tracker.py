@@ -89,17 +89,17 @@ class HistogramBasedMedianTracker:
 
             self.hist_count += 1
 
-            # Compute median ONLY when updating histogram (matches C++ behavior)
-            # C++ only updates median inside the if(frames_tracking % 2 == 1) block
-            # On hist_count==1: use descriptor directly
-            # On hist_count>=2: compute from histogram
-            if self.hist_count == 1:
-                # First update: use descriptor directly (matches C++ if(hist_count == 1) median = descriptor.clone())
-                self.current_median = features.copy()
-            else:
-                # Frame 2+: compute from histogram
-                self._compute_median()
-        # When update_histogram=False, keep the previous median (matches C++ behavior)
+        # Compute median on EVERY frame (matches Cython implementation)
+        # This must be OUTSIDE the if update_histogram: block
+        if self.hist_count == 0:
+            # Frame 0: histogram not updated yet, use descriptor directly
+            self.current_median = features.copy()
+        elif self.hist_count == 1:
+            # Frame 1: histogram updated once, still use descriptor directly
+            self.current_median = features.copy()
+        else:
+            # Frame 2+: compute from histogram
+            self._compute_median()
 
     def _compute_median(self, first_descriptor: np.ndarray = None) -> None:
         """
@@ -188,41 +188,32 @@ class DualHistogramMedianTracker:
         self.geom_tracker = HistogramBasedMedianTracker(
             geom_dim, geom_bins, geom_min, geom_max
         )
-
-        # Track frame number to match C++ behavior (geometric updates every other frame)
-        self.frames_tracking = 0
+        # NOTE: Removed frames_tracking counter to match Cython implementation
+        # Caller controls update timing via update_histogram parameter
 
     def update(self, hog_features: np.ndarray, geom_features: np.ndarray,
                update_histogram: bool = True) -> None:
         """
         Update both trackers
 
-        CRITICAL: Matches C++ OpenFace 2.2 behavior (FaceAnalyser.cpp:400-428)
-        - BOTH HOG and geometric medians: updated every OTHER frame (when frames_tracking % 2 == 1)
-        - This is done as "a small speedup" optimization in C++
+        Matches Cython implementation - caller controls update timing via update_histogram.
+        No internal frame counter (removed to match Cython).
 
         Args:
             hog_features: HOG feature vector
             geom_features: Geometric feature vector
-            update_histogram: Whether to update histograms
+            update_histogram: Whether to update histograms (caller controls timing)
         """
-        # CRITICAL: C++ updates BOTH medians only on odd frames (line 400-428 in FaceAnalyser.cpp)
-        # if(frames_tracking % 2 == 1)
-        update_on_this_frame = update_histogram and (self.frames_tracking % 2 == 1)
-
-        # Update HOG tracker (only on odd frames)
-        self.hog_tracker.update(hog_features, update_on_this_frame)
+        # Pass update_histogram directly (matches Cython implementation)
+        self.hog_tracker.update(hog_features, update_histogram)
 
         # CRITICAL: OpenFace clamps HOG median to >= 0 after update (line 405 in FaceAnalyser.cpp)
         # this->hog_desc_median.setTo(0, this->hog_desc_median < 0);
-        if update_on_this_frame:
-            self.hog_tracker.current_median[self.hog_tracker.current_median < 0] = 0.0
+        # Apply on every call (matches Cython lines 281-285)
+        self.hog_tracker.current_median[self.hog_tracker.current_median < 0] = 0.0
 
-        # Update geometric tracker (only on odd frames)
-        self.geom_tracker.update(geom_features, update_on_this_frame)
-
-        # Increment frame counter
-        self.frames_tracking += 1
+        # Update geometric tracker
+        self.geom_tracker.update(geom_features, update_histogram)
 
     def get_combined_median(self) -> np.ndarray:
         """
@@ -247,7 +238,6 @@ class DualHistogramMedianTracker:
         """Reset both trackers"""
         self.hog_tracker.reset()
         self.geom_tracker.reset()
-        self.frames_tracking = 0
 
 
 def test_histogram_tracker():

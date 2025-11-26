@@ -470,7 +470,7 @@ class FullPythonAUPipeline:
                 if self.verbose and (frame_idx + 1) % 10 == 0:
                     progress = (frame_idx + 1) / total_frames * 100
                     print(f"Progress: {frame_idx + 1}/{total_frames} frames ({progress:.1f}%) - "
-                          f"Success: {total_processed}, Failed: {total_failed}")
+                          f"Success: {total_processed}, Failed: {total_failed}", flush=True)
 
                 frame_idx += 1
 
@@ -583,7 +583,7 @@ class FullPythonAUPipeline:
 
                 # Use primary face (highest confidence)
                 det = detections[0]
-                bbox = det[:4].astype(int)  # [x1, y1, x2, y2]
+                bbox = det[:4]  # PyMTCNN returns [x, y, width, height]
 
                 # Cache bbox for next frame
                 if self.track_faces:
@@ -604,10 +604,8 @@ class FullPythonAUPipeline:
                 print(f"[Frame {frame_idx}] Step 2: Detecting landmarks with CLNF...")
 
             try:
-                # Convert bbox from [x_min, y_min, x_max, y_max] to [x, y, width, height] for pyclnf
-                bbox_x, bbox_y = bbox[0], bbox[1]
-                bbox_w, bbox_h = bbox[2] - bbox[0], bbox[3] - bbox[1]
-                bbox_pyclnf = (bbox_x, bbox_y, bbox_w, bbox_h)
+                # PyMTCNN returns [x, y, width, height] directly - use as-is for pyclnf
+                bbox_pyclnf = (float(bbox[0]), float(bbox[1]), float(bbox[2]), float(bbox[3]))
 
                 # Detect landmarks with CLNF optimization
                 landmarks_68, info = self.landmark_detector.fit(frame, bbox_pyclnf)
@@ -639,14 +637,13 @@ class FullPythonAUPipeline:
                         return result
 
                     det = detections[0]
-                    bbox = det[:4].astype(int)
+                    bbox = det[:4]  # PyMTCNN returns [x, y, width, height]
                     self.cached_bbox = bbox
                     self.frames_since_detection = 0
 
                     # Retry landmark detection with new bbox
-                    bbox_x, bbox_y = bbox[0], bbox[1]
-                    bbox_w, bbox_h = bbox[2] - bbox[0], bbox[3] - bbox[1]
-                    bbox_pyclnf = (bbox_x, bbox_y, bbox_w, bbox_h)
+                    # PyMTCNN returns [x, y, width, height] directly - use as-is for pyclnf
+                    bbox_pyclnf = (float(bbox[0]), float(bbox[1]), float(bbox[2]), float(bbox[3]))
                     landmarks_68, info = self.landmark_detector.fit(frame, bbox_pyclnf)
                     converged = info['converged']
                     num_iterations = info['iterations']
@@ -672,10 +669,11 @@ class FullPythonAUPipeline:
             else:
                 # Simplified approach: use bounding box for rough pose
                 # (This is a fallback - CalcParams is recommended)
+                # PyMTCNN bbox format: [x, y, width, height]
                 scale = 1.0
                 rx = ry = rz = 0.0
-                tx = (bbox[0] + bbox[2]) / 2
-                ty = (bbox[1] + bbox[3]) / 2
+                tx = bbox[0] + bbox[2] / 2  # x + width/2
+                ty = bbox[1] + bbox[3] / 2  # y + height/2
                 params_local = np.zeros(34)
 
             if debug_info is not None:
