@@ -2,52 +2,16 @@
 setup.py for pyfaceau - Pure Python OpenFace 2.2 AU Extraction
 """
 
-from setuptools import setup, find_packages, Extension
+from setuptools import setup, find_packages
 from pathlib import Path
-import numpy as np
 
 # Read long description from README
 this_directory = Path(__file__).parent
 long_description = (this_directory / "README.md").read_text()
 
-# Try to import Cython for building extensions
-try:
-    from Cython.Build import cythonize
-    USE_CYTHON = True
-except ImportError:
-    USE_CYTHON = False
-
-# Define Cython extensions
-ext_modules = []
-if USE_CYTHON:
-    extensions = [
-        Extension(
-            "pyfaceau.cython_histogram_median",
-            ["pyfaceau/utils/cython_extensions/cython_histogram_median.pyx"],
-            include_dirs=[np.get_include()],
-            extra_compile_args=['-O3'],
-        ),
-        Extension(
-            "pyfaceau.cython_rotation_update",
-            ["pyfaceau/utils/cython_extensions/cython_rotation_update.pyx"],
-            include_dirs=[np.get_include()],
-            extra_compile_args=['-O3'],
-        ),
-    ]
-    ext_modules = cythonize(
-        extensions,
-        compiler_directives={
-            'language_level': "3",
-            'boundscheck': False,
-            'wraparound': False,
-            'cdivision': True,
-            'initializedcheck': False,
-        }
-    )
-
 setup(
     name="pyfaceau",
-    version="1.1.0",
+    version="1.3.0",
     author="John Wilson",
     author_email="",  # Add email if desired
     description="Pure Python OpenFace 2.2 AU extraction with PyMTCNN face detection and CLNF refinement",
@@ -82,7 +46,7 @@ setup(
         "scikit-learn>=1.0.0",
         "tqdm>=4.62.0",
         "pyfhog>=0.1.0",
-        "Cython>=0.29.0",
+        "pyclnf>=0.2.0",
         "pymtcnn>=1.1.0",  # Cross-platform face detection
     ],
     extras_require={
@@ -115,7 +79,6 @@ setup(
         ],
     },
     scripts=['pyfaceau_gui.py'],
-    ext_modules=ext_modules,
     include_package_data=True,
     package_data={
         "pyfaceau": ["*.txt", "*.json"],
