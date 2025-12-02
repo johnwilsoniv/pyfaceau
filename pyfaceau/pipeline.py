@@ -26,6 +26,8 @@ from typing import Dict, List, Optional, Tuple
 import argparse
 import sys
 import time
+import subprocess
+import json
 
 # Import all pipeline components
 from pyfaceau.detectors.pymtcnn_detector import PyMTCNNDetector, PYMTCNN_AVAILABLE
@@ -67,6 +69,88 @@ except ImportError:
         print("Error: pyfhog not found. Please install it:")
         print("   cd ../pyfhog && pip install -e .")
         sys.exit(1)
+
+
+def get_video_rotation(video_path: str) -> int:
+    """
+    Get video rotation from metadata using ffprobe.
+
+    Args:
+        video_path: Path to video file
+
+    Returns:
+        Rotation angle in degrees (0, 90, -90, 180, 270)
+    """
+    try:
+        # Try JSON metadata first (most comprehensive)
+        cmd = f'ffprobe -v quiet -print_format json -show_streams "{video_path}"'
+        output = subprocess.check_output(cmd, shell=True, universal_newlines=True, stderr=subprocess.DEVNULL).strip()
+
+        metadata = json.loads(output)
+        for stream in metadata.get('streams', []):
+            # Check rotate tag
+            rotation = stream.get('tags', {}).get('rotate')
+            if rotation is None:
+                rotation = stream.get('rotation')
+
+            if rotation is not None:
+                try:
+                    return int(rotation)
+                except ValueError:
+                    pass
+
+            # Check displaymatrix in side data (iOS videos)
+            if 'side_data_list' in stream:
+                for side_data in stream['side_data_list']:
+                    side_str = str(side_data).lower()
+                    if 'displaymatrix' in side_str:
+                        if 'rotation of -90' in side_str:
+                            return -90
+                        elif 'rotation of 90' in side_str:
+                            return 90
+                        elif 'rotation of 180' in side_str:
+                            return 180
+                        elif 'rotation of -180' in side_str:
+                            return 180
+    except (subprocess.CalledProcessError, json.JSONDecodeError, FileNotFoundError):
+        pass
+
+    # Try specific ffprobe commands
+    specific_commands = [
+        f'ffprobe -v error -select_streams v:0 -show_entries stream_tags=rotate -of default=nw=1:nk=1 "{video_path}"',
+        f'ffprobe -v error -select_streams v:0 -show_entries stream=rotate -of default=nw=1:nk=1 "{video_path}"',
+    ]
+
+    for cmd in specific_commands:
+        try:
+            output = subprocess.check_output(cmd, shell=True, universal_newlines=True, stderr=subprocess.DEVNULL).strip()
+            if output:
+                return int(output)
+        except (subprocess.CalledProcessError, ValueError, FileNotFoundError):
+            pass
+
+    return 0
+
+
+def apply_frame_rotation(frame: np.ndarray, rotation: int) -> np.ndarray:
+    """
+    Apply rotation to a video frame based on metadata rotation angle.
+
+    Args:
+        frame: Input frame (BGR)
+        rotation: Rotation angle from metadata
+
+    Returns:
+        Rotated frame
+    """
+    if rotation == 90 or rotation == -270:
+        return cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
+    elif rotation == -90 or rotation == 270:
+        return cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
+    elif rotation == 180 or rotation == -180:
+        return cv2.rotate(frame, cv2.ROTATE_180)
+    else:
+        return frame
 
 
 class FullPythonAUPipeline:
@@ -426,6 +510,11 @@ class FullPythonAUPipeline:
             print("=" * 80)
             print("")
 
+        # Detect video rotation from metadata (important for mobile videos)
+        rotation = get_video_rotation(str(video_path))
+        if self.verbose and rotation != 0:
+            print(f"Detected video rotation: {rotation}°")
+
         # Open video
         cap = cv2.VideoCapture(str(video_path))
         fps = cap.get(cv2.CAP_PROP_FPS)
@@ -439,6 +528,8 @@ class FullPythonAUPipeline:
             print(f"  FPS: {fps:.2f}")
             print(f"  Total frames: {total_frames}")
             print(f"  Duration: {total_frames/fps:.2f} seconds")
+            if rotation != 0:
+                print(f"  Rotation: {rotation}° (will be corrected)")
             print("")
 
         # Results storage
@@ -454,6 +545,10 @@ class FullPythonAUPipeline:
                 ret, frame = cap.read()
                 if not ret or (max_frames and frame_idx >= max_frames):
                     break
+
+                # Apply rotation correction if needed
+                if rotation != 0:
+                    frame = apply_frame_rotation(frame, rotation)
 
                 timestamp = frame_idx / fps
 
