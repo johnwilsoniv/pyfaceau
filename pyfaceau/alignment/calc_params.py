@@ -17,6 +17,7 @@ Date: 2025-10-29
 import numpy as np
 from scipy import linalg
 import cv2
+import os
 
 # Try to import Cython-optimized rotation update for 99.9% accuracy
 try:
@@ -26,10 +27,12 @@ try:
     sys.path.insert(0, str(Path(__file__).parent.parent))
     from cython_rotation_update import update_rotation_cython
     CYTHON_AVAILABLE = True
-    print("Cython rotation update module loaded - targeting 99.9% accuracy")
+    if os.environ.get('PYFACEAU_VERBOSE', '0') == '1':
+        print("Cython rotation update module loaded - targeting 99.9% accuracy")
 except ImportError:
     CYTHON_AVAILABLE = False
-    print("Warning: Cython rotation update not available - using Python (99.45% accuracy)")
+    if os.environ.get('PYFACEAU_VERBOSE', '0') == '1':
+        print("Warning: Cython rotation update not available - using Python (99.45% accuracy)")
 
 # Try to import Numba JIT-accelerated CalcParams functions for 2-5x speedup
 try:
@@ -41,7 +44,6 @@ try:
     NUMBA_AVAILABLE = True
 except ImportError:
     NUMBA_AVAILABLE = False
-    print("Warning: Numba JIT accelerator not available - using standard Python (slower)")
 
 
 class CalcParams:
