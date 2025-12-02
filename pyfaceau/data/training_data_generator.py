@@ -176,21 +176,15 @@ class TrainingDataGenerator:
 
         # Face detection
         try:
-            faces, scores = self._face_detector.detect(frame)
-            if faces is None or len(faces) == 0:
+            # pymtcnn returns (bboxes, landmarks) not (bboxes, scores)
+            bboxes, mtcnn_landmarks = self._face_detector.detect(frame)
+            if bboxes is None or len(bboxes) == 0:
                 if self.config.verbose:
                     print("    [DEBUG] No face detected")
                 return None
-            bbox = faces[0][:4].astype(np.float32)
-            # Handle scores that might be arrays or scalars
-            if scores is not None and len(scores) > 0:
-                # MTCNN returns scores as 1D array or 2D array depending on version
-                score_val = np.atleast_1d(scores)[0]
-                if isinstance(score_val, np.ndarray):
-                    score_val = score_val.flat[0]  # Get first element
-                detection_confidence = float(score_val)
-            else:
-                detection_confidence = 1.0
+            bbox = bboxes[0][:4].astype(np.float32)
+            # MTCNN doesn't return confidence scores, use 1.0
+            detection_confidence = 1.0
         except Exception as e:
             if self.config.verbose:
                 import traceback
