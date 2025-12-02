@@ -102,15 +102,22 @@ def get_video_rotation(video_path: str) -> int:
             # Check displaymatrix in side data (iOS videos)
             if 'side_data_list' in stream:
                 for side_data in stream['side_data_list']:
+                    # Check for 'rotation' key directly (newer ffprobe versions)
+                    if 'rotation' in side_data:
+                        try:
+                            return int(side_data['rotation'])
+                        except (ValueError, TypeError):
+                            pass
+                    # Fallback to string parsing for older formats
                     side_str = str(side_data).lower()
                     if 'displaymatrix' in side_str:
-                        if 'rotation of -90' in side_str:
+                        if 'rotation of -90' in side_str or "'rotation': -90" in side_str:
                             return -90
-                        elif 'rotation of 90' in side_str:
+                        elif 'rotation of 90' in side_str or "'rotation': 90" in side_str:
                             return 90
-                        elif 'rotation of 180' in side_str:
+                        elif 'rotation of 180' in side_str or "'rotation': 180" in side_str:
                             return 180
-                        elif 'rotation of -180' in side_str:
+                        elif 'rotation of -180' in side_str or "'rotation': -180" in side_str:
                             return 180
     except (subprocess.CalledProcessError, json.JSONDecodeError, FileNotFoundError):
         pass
@@ -136,17 +143,23 @@ def apply_frame_rotation(frame: np.ndarray, rotation: int) -> np.ndarray:
     """
     Apply rotation to a video frame based on metadata rotation angle.
 
+    The rotation metadata indicates how the video was recorded (device orientation).
+    To display correctly, we rotate in the OPPOSITE direction.
+
     Args:
         frame: Input frame (BGR)
-        rotation: Rotation angle from metadata
+        rotation: Rotation angle from metadata (how video was recorded)
 
     Returns:
-        Rotated frame
+        Rotated frame (corrected to upright)
     """
+    # Rotate OPPOSITE to the recorded rotation to correct orientation
     if rotation == 90 or rotation == -270:
-        return cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
-    elif rotation == -90 or rotation == 270:
+        # Video recorded at +90, rotate -90 (counterclockwise) to correct
         return cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
+    elif rotation == -90 or rotation == 270:
+        # Video recorded at -90, rotate +90 (clockwise) to correct
+        return cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
     elif rotation == 180 or rotation == -180:
         return cv2.rotate(frame, cv2.ROTATE_180)
     else:
@@ -678,7 +691,7 @@ class FullPythonAUPipeline:
 
                 # Use primary face (highest confidence)
                 det = detections[0]
-                bbox = det[:4]  # PyMTCNN returns [x, y, width, height]
+                bbox = det[:4].astype(int)  # [x1, y1, x2, y2]
 
                 # Cache bbox for next frame
                 if self.track_faces:
@@ -699,8 +712,10 @@ class FullPythonAUPipeline:
                 print(f"[Frame {frame_idx}] Step 2: Detecting landmarks with CLNF...")
 
             try:
-                # PyMTCNN returns [x, y, width, height] directly - use as-is for pyclnf
-                bbox_pyclnf = (float(bbox[0]), float(bbox[1]), float(bbox[2]), float(bbox[3]))
+                # Convert bbox from [x1, y1, x2, y2] to [x, y, width, height] for pyclnf
+                bbox_x, bbox_y = bbox[0], bbox[1]
+                bbox_w, bbox_h = bbox[2] - bbox[0], bbox[3] - bbox[1]
+                bbox_pyclnf = (bbox_x, bbox_y, bbox_w, bbox_h)
 
                 # Detect landmarks with CLNF optimization
                 landmarks_68, info = self.landmark_detector.fit(frame, bbox_pyclnf)
@@ -732,13 +747,15 @@ class FullPythonAUPipeline:
                         return result
 
                     det = detections[0]
-                    bbox = det[:4]  # PyMTCNN returns [x, y, width, height]
+                    bbox = det[:4].astype(int)  # [x1, y1, x2, y2]
                     self.cached_bbox = bbox
                     self.frames_since_detection = 0
 
                     # Retry landmark detection with new bbox
-                    # PyMTCNN returns [x, y, width, height] directly - use as-is for pyclnf
-                    bbox_pyclnf = (float(bbox[0]), float(bbox[1]), float(bbox[2]), float(bbox[3]))
+                    # Convert bbox from [x1, y1, x2, y2] to [x, y, width, height] for pyclnf
+                    bbox_x, bbox_y = bbox[0], bbox[1]
+                    bbox_w, bbox_h = bbox[2] - bbox[0], bbox[3] - bbox[1]
+                    bbox_pyclnf = (bbox_x, bbox_y, bbox_w, bbox_h)
                     landmarks_68, info = self.landmark_detector.fit(frame, bbox_pyclnf)
                     converged = info['converged']
                     num_iterations = info['iterations']
