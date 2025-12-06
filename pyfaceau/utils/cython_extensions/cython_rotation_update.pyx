@@ -67,62 +67,44 @@ cdef void euler_to_rotation_matrix_c(float rx, float ry, float rz, float[:, :] R
 @cython.wraparound(False)
 cdef void rotation_matrix_to_euler_c(float[:, :] R, float* rx, float* ry, float* rz) nogil:
     """
-    Convert rotation matrix to Euler angles using Shepperd's method (C implementation)
+    Convert rotation matrix to Euler angles using EXACT C++ method
 
-    Robust quaternion extraction handles all rotation cases without singularities.
-    Matches OpenFace RotationMatrix2Euler() via quaternion intermediate.
+    EXACTLY matches RotationMatrix2Euler() from OpenFace RotationHelpers.h lines 73-90
+    Uses simple quaternion extraction (assumes trace+1 > 0)
 
     Args:
         R: 3x3 rotation matrix
         rx, ry, rz: Output Euler angles (pointers)
     """
-    cdef float trace, s, q0, q1, q2, q3, t1
+    cdef float q0, q1, q2, q3, t1
 
-    trace = R[0, 0] + R[1, 1] + R[2, 2]
+    # EXACT C++ implementation from RotationHelpers.h lines 75-78
+    # float q0 = sqrt(1 + rotation_matrix(0, 0) + rotation_matrix(1, 1) + rotation_matrix(2, 2)) / 2.0f;
+    q0 = sqrt(1.0 + R[0, 0] + R[1, 1] + R[2, 2]) / 2.0
 
-    # Shepperd's method: choose largest component for numerical stability
-    if trace > 0.0:
-        # q0 is largest
-        s = sqrt(trace + 1.0) * 2.0  # s = 4*q0
-        q0 = 0.25 * s
-        q1 = (R[2, 1] - R[1, 2]) / s
-        q2 = (R[0, 2] - R[2, 0]) / s
-        q3 = (R[1, 0] - R[0, 1]) / s
-    elif (R[0, 0] > R[1, 1]) and (R[0, 0] > R[2, 2]):
-        # q1 is largest
-        s = sqrt(1.0 + R[0, 0] - R[1, 1] - R[2, 2]) * 2.0  # s = 4*q1
-        q0 = (R[2, 1] - R[1, 2]) / s
-        q1 = 0.25 * s
-        q2 = (R[0, 1] + R[1, 0]) / s
-        q3 = (R[0, 2] + R[2, 0]) / s
-    elif R[1, 1] > R[2, 2]:
-        # q2 is largest
-        s = sqrt(1.0 + R[1, 1] - R[0, 0] - R[2, 2]) * 2.0  # s = 4*q2
-        q0 = (R[0, 2] - R[2, 0]) / s
-        q1 = (R[0, 1] + R[1, 0]) / s
-        q2 = 0.25 * s
-        q3 = (R[1, 2] + R[2, 1]) / s
-    else:
-        # q3 is largest
-        s = sqrt(1.0 + R[2, 2] - R[0, 0] - R[1, 1]) * 2.0  # s = 4*q3
-        q0 = (R[1, 0] - R[0, 1]) / s
-        q1 = (R[0, 2] + R[2, 0]) / s
-        q2 = (R[1, 2] + R[2, 1]) / s
-        q3 = 0.25 * s
+    # float q1 = (rotation_matrix(2, 1) - rotation_matrix(1, 2)) / (4.0f*q0);
+    q1 = (R[2, 1] - R[1, 2]) / (4.0 * q0)
+    # float q2 = (rotation_matrix(0, 2) - rotation_matrix(2, 0)) / (4.0f*q0);
+    q2 = (R[0, 2] - R[2, 0]) / (4.0 * q0)
+    # float q3 = (rotation_matrix(1, 0) - rotation_matrix(0, 1)) / (4.0f*q0);
+    q3 = (R[1, 0] - R[0, 1]) / (4.0 * q0)
 
-    # Quaternion to Euler angles
+    # Quaternion to Euler angles (exactly as in C++)
+    # float t1 = 2.0f * (q0*q2 + q1*q3);
     t1 = 2.0 * (q0*q2 + q1*q3)
 
-    # Clamp to [-1, 1] for numerical stability
+    # if (t1 > 1) t1 = 1.0f; if (t1 < -1) t1 = -1.0f;
     if t1 > 1.0:
         t1 = 1.0
-    elif t1 < -1.0:
+    if t1 < -1.0:
         t1 = -1.0
 
-    # Extract Euler angles (pitch, yaw, roll)
-    ry[0] = asin(t1)  # yaw
-    rx[0] = atan2(2.0 * (q0*q1 - q2*q3), q0*q0 - q1*q1 - q2*q2 + q3*q3)  # pitch
-    rz[0] = atan2(2.0 * (q0*q3 - q1*q2), q0*q0 + q1*q1 - q2*q2 - q3*q3)  # roll
+    # float yaw = asin(t1);
+    ry[0] = asin(t1)
+    # float pitch = atan2(2.0f * (q0*q1 - q2*q3), q0*q0 - q1*q1 - q2*q2 + q3*q3);
+    rx[0] = atan2(2.0 * (q0*q1 - q2*q3), q0*q0 - q1*q1 - q2*q2 + q3*q3)
+    # float roll = atan2(2.0f * (q0*q3 - q1*q2), q0*q0 + q1*q1 - q2*q2 - q3*q3);
+    rz[0] = atan2(2.0 * (q0*q3 - q1*q2), q0*q0 + q1*q1 - q2*q2 - q3*q3)
 
 
 @cython.boundscheck(False)
@@ -180,9 +162,17 @@ def update_rotation_cython(cnp.ndarray[FLOAT32, ndim=1] euler_current,
     # Combine rotations: R3 = R1 @ R2
     R3 = (R1 @ R2).astype(np.float32)
 
-    # Convert R3 back to Euler angles using Cython C function
+    # CRITICAL: C++ uses axis-angle as intermediate!
+    # cv::Vec3f axis_angle = Utilities::RotationMatrix2AxisAngle(R3);  // cv::Rodrigues
+    # cv::Vec3f euler = Utilities::AxisAngle2Euler(axis_angle);        // Rodrigues back + RotationMatrix2Euler
+    import cv2
+    axis_angle, _ = cv2.Rodrigues(R3)  # RotationMatrix2AxisAngle
+    R3_reconst, _ = cv2.Rodrigues(axis_angle)  # AxisAngle -> RotationMatrix
+    R3_reconst = R3_reconst.astype(np.float32)
+
+    # Convert reconstituted R3 back to Euler angles using Cython C function
     cdef float rx_new, ry_new, rz_new
-    rotation_matrix_to_euler_c(R3, &rx_new, &ry_new, &rz_new)
+    rotation_matrix_to_euler_c(R3_reconst, &rx_new, &ry_new, &rz_new)
 
     # Handle NaN (shouldn't happen with robust method, but safety check)
     if rx_new != rx_new or ry_new != ry_new or rz_new != rz_new:  # NaN check

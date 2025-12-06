@@ -127,9 +127,8 @@ class TrainingDataGenerator:
     def _extract_hog(self, aligned_face: np.ndarray) -> np.ndarray:
         """Extract HOG features from aligned face."""
         hog = self._pyfhog.extract_fhog_features(aligned_face, cell_size=8)
-        # Reshape to match OpenFace format: (12, 12, 31) -> (4464,)
-        hog = hog.reshape(12, 12, 31).transpose(1, 0, 2).flatten().astype(np.float32)
-        return hog
+        # pyfhog 0.1.4+ outputs in OpenFace-compatible format (4464,)
+        return hog.astype(np.float32)
 
     def _predict_aus(self, hog_features: np.ndarray, geom_features: np.ndarray) -> np.ndarray:
         """Predict AU intensities from features."""
