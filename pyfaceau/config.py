@@ -84,14 +84,14 @@ RUNNING_MEDIAN_CONFIG = {
 # CLNF Optimizer Defaults (in pyclnf/clnf.py)
 # =============================================================================
 # These are documented here for reference - actual defaults are in pyclnf:
-#   regularization: 35            # C++ default reg_factor
-#   sigma: 2.25                   # C++ CECLM default
+#   regularization: 22.5          # C++ CECLM: 25.0 base × 0.9 = 22.5
+#   sigma: 2.25                   # C++ CECLM: 1.5 base × 1.5 = 2.25
 #   weight_multiplier: 0.0        # C++ disables NU-RLMS weighting
 
 # =============================================================================
 # Known Fixes Applied
 # =============================================================================
-# 1. Optimizer defaults: reg=35, sigma=2.25 (in pyclnf/clnf.py)
+# 1. Optimizer defaults: reg=22.5, sigma=2.25 (in pyclnf/clnf.py)
 # 2. PDM epsilon: No +1e-10 in eigenvalue regularization (in pyclnf/core/pdm.py)
 # 3. BORDER_REPLICATE: Used in patch extraction (in pyclnf/core/optimizer.py)
 # 4. Template tracking: Enabled in video mode (in pyclnf/clnf.py)
