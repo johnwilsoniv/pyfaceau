@@ -99,10 +99,10 @@ class CalcParams:
     @staticmethod
     def rotation_matrix_to_euler(R):
         """
-        Convert 3x3 rotation matrix to Euler angles using robust quaternion extraction
+        Convert 3x3 rotation matrix to Euler angles
 
-        Matches RotationMatrix2Euler() from RotationHelpers.h
-        Uses Shepperd's method for robust quaternion extraction (handles all cases)
+        EXACTLY matches RotationMatrix2Euler() from RotationHelpers.h lines 73-90
+        Uses simple quaternion extraction (assumes trace+1 > 0)
 
         Args:
             R: 3x3 rotation matrix
@@ -110,47 +110,34 @@ class CalcParams:
         Returns:
             (rx, ry, rz) Euler angles in radians
         """
-        # Robust quaternion extraction using Shepperd's method
-        # This handles all rotation cases without singularities
-        trace = R[0,0] + R[1,1] + R[2,2]
+        # EXACT C++ implementation from RotationHelpers.h
+        # float q0 = sqrt(1 + rotation_matrix(0, 0) + rotation_matrix(1, 1) + rotation_matrix(2, 2)) / 2.0f;
+        q0 = np.sqrt(1.0 + R[0,0] + R[1,1] + R[2,2]) / 2.0
 
-        if trace > 0:
-            # Standard case: trace is positive
-            s = np.sqrt(trace + 1.0) * 2.0  # s = 4*q0
-            q0 = 0.25 * s
-            q1 = (R[2,1] - R[1,2]) / s
-            q2 = (R[0,2] - R[2,0]) / s
-            q3 = (R[1,0] - R[0,1]) / s
-        elif (R[0,0] > R[1,1]) and (R[0,0] > R[2,2]):
-            # q1 is largest component
-            s = np.sqrt(1.0 + R[0,0] - R[1,1] - R[2,2]) * 2.0  # s = 4*q1
-            q0 = (R[2,1] - R[1,2]) / s
-            q1 = 0.25 * s
-            q2 = (R[0,1] + R[1,0]) / s
-            q3 = (R[0,2] + R[2,0]) / s
-        elif R[1,1] > R[2,2]:
-            # q2 is largest component
-            s = np.sqrt(1.0 + R[1,1] - R[0,0] - R[2,2]) * 2.0  # s = 4*q2
-            q0 = (R[0,2] - R[2,0]) / s
-            q1 = (R[0,1] + R[1,0]) / s
-            q2 = 0.25 * s
-            q3 = (R[1,2] + R[2,1]) / s
-        else:
-            # q3 is largest component
-            s = np.sqrt(1.0 + R[2,2] - R[0,0] - R[1,1]) * 2.0  # s = 4*q3
-            q0 = (R[1,0] - R[0,1]) / s
-            q1 = (R[0,2] + R[2,0]) / s
-            q2 = (R[1,2] + R[2,1]) / s
-            q3 = 0.25 * s
+        # float q1 = (rotation_matrix(2, 1) - rotation_matrix(1, 2)) / (4.0f*q0);
+        q1 = (R[2,1] - R[1,2]) / (4.0 * q0)
+        # float q2 = (rotation_matrix(0, 2) - rotation_matrix(2, 0)) / (4.0f*q0);
+        q2 = (R[0,2] - R[2,0]) / (4.0 * q0)
+        # float q3 = (rotation_matrix(1, 0) - rotation_matrix(0, 1)) / (4.0f*q0);
+        q3 = (R[1,0] - R[0,1]) / (4.0 * q0)
 
-        # Quaternion to Euler angles
+        # Quaternion to Euler angles (exactly as in C++)
+        # float t1 = 2.0f * (q0*q2 + q1*q3);
         t1 = 2.0 * (q0*q2 + q1*q3)
-        t1 = np.clip(t1, -1.0, 1.0)  # Handle precision issues
+        # if (t1 > 1) t1 = 1.0f; if (t1 < -1) t1 = -1.0f;
+        if t1 > 1.0:
+            t1 = 1.0
+        if t1 < -1.0:
+            t1 = -1.0
 
+        # float yaw = asin(t1);
         yaw = np.arcsin(t1)
+        # float pitch = atan2(2.0f * (q0*q1 - q2*q3), q0*q0 - q1*q1 - q2*q2 + q3*q3);
         pitch = np.arctan2(2.0 * (q0*q1 - q2*q3), q0*q0 - q1*q1 - q2*q2 + q3*q3)
+        # float roll = atan2(2.0f * (q0*q3 - q1*q2), q0*q0 + q1*q1 - q2*q2 - q3*q3);
         roll = np.arctan2(2.0 * (q0*q3 - q1*q2), q0*q0 + q1*q1 - q2*q2 - q3*q3)
 
+        # return cv::Vec3f(pitch, yaw, roll);
         return np.array([pitch, yaw, roll], dtype=np.float32)
 
     @staticmethod
@@ -383,15 +370,15 @@ class CalcParams:
             euler_new = update_rotation_cython(euler_current, delta_rotation)
             updated_global[1:4] = euler_new
         else:
-            # Fallback to Python implementation (99.45% accuracy)
+            # Fallback to Python implementation matching C++ EXACTLY
             # Get current rotation matrix
             euler_current = params_global[1:4]
             R1 = self.euler_to_rotation_matrix(euler_current)
 
             # Construct incremental rotation matrix R'
-            # R' = [1,   -wz,   wy ]
-            #      [wz,   1,   -wx ]
-            #      [-wy,  wx,   1  ]
+            # R2(1,2) = -1.0*(R2(2,1) = delta_p.at<float>(1,0));  // wx
+            # R2(2,0) = -1.0*(R2(0,2) = delta_p.at<float>(2,0));  // wy
+            # R2(0,1) = -1.0*(R2(1,0) = delta_p.at<float>(3,0));  // wz
             R2 = np.eye(3, dtype=np.float32)
             R2[1, 2] = -delta_p[1]  # -wx
             R2[2, 1] = delta_p[1]   # wx
@@ -406,10 +393,12 @@ class CalcParams:
             # Combine rotations
             R3 = R1 @ R2
 
-            # Convert back to Euler angles using quaternion (matching C++ RotationHelpers.h)
-            # C++ uses: RotationMatrix2AxisAngle then AxisAngle2Euler (via quaternion)
-            # Direct quaternion conversion matches C++ better than axis-angle via OpenCV
-            euler_new = self.rotation_matrix_to_euler(R3)
+            # C++ uses: RotationMatrix2AxisAngle -> AxisAngle2Euler
+            # cv::Vec3f axis_angle = Utilities::RotationMatrix2AxisAngle(R3);
+            # cv::Vec3f euler = Utilities::AxisAngle2Euler(axis_angle);
+            # This is: Rodrigues(R3) -> Rodrigues(axis_angle) -> RotationMatrix2Euler
+            axis_angle = self.rotation_matrix_to_axis_angle(R3)
+            euler_new = self.axis_angle_to_euler(axis_angle)
 
             # Handle numerical instability
             if np.any(np.isnan(euler_new)):

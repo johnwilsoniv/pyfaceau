@@ -37,7 +37,7 @@ class OpenFace22FaceAligner:
     # Testing shows removing eyes improves STABILITY but ruins MAGNITUDE (31° vs 5°)
     RIGID_INDICES = [1, 2, 3, 4, 12, 13, 14, 15, 27, 28, 29, 31, 32, 33, 34, 35, 36, 39, 40, 41, 42, 45, 46, 47]
 
-    def __init__(self, pdm_file: str, sim_scale: float = 0.7, output_size: Tuple[int, int] = (112, 112)):
+    def __init__(self, pdm_file: str, sim_scale: float = 0.7, output_size: Tuple[int, int] = (112, 112), y_offset: float = 0.0):
         """
         Initialize face aligner with PDM reference shape
 
@@ -45,9 +45,12 @@ class OpenFace22FaceAligner:
             pdm_file: Path to PDM model file (e.g., "pdm_68_multi_pie.txt")
             sim_scale: Scaling factor for reference shape (default: 0.7 for AU analysis)
             output_size: Output aligned face size in pixels (default: 112×112)
+            y_offset: Y-axis offset for centering (negative shifts face UP, default: 0.0)
+                      Note: Non-zero values can disrupt HOG feature alignment with C++ models.
         """
         self.sim_scale = sim_scale
         self.output_width, self.output_height = output_size
+        self.y_offset = y_offset
 
         # Load PDM and extract mean shape
         print(f"Loading PDM from: {pdm_file}")
@@ -56,15 +59,17 @@ class OpenFace22FaceAligner:
         # Preprocess mean shape: 204 values (68 landmarks × 3D) → 68 landmarks × 2D
         # OpenFace C++ logic (Face_utils.cpp:112-119):
         # 1. Scale mean shape by sim_scale
-        # 2. Discard Z component (take first 136 values = all X,Y coords)
-        # 3. Reshape to (68, 2) format
+        # 2. Extract X and Y coordinates (grouped format)
+        # 3. Stack to (68, 2) format
         #
-        # CRITICAL: PDM stores as: [x0, y0, x1, y1, ..., x67, y67, z0, z1, ..., z67]
-        # NOT as: [x0, y0, z0, x1, y1, z1, ...]
-        # So we must: take first 136 values (all X,Y), then reshape
-        mean_shape_scaled = pdm.mean_shape * sim_scale  # (204, 1)
-        mean_shape_2d = mean_shape_scaled[:136]  # First 136 = all X,Y values
-        self.reference_shape = mean_shape_2d.reshape(68, 2)  # (68, 2)
+        # CRITICAL FIX: PDM stores as GROUPED format:
+        #   [x0, x1, ..., x67, y0, y1, ..., y67, z0, z1, ..., z67]
+        # NOT interleaved: [x0, y0, x1, y1, ...]
+        # So we must: take first 68 as X, next 68 as Y, stack them
+        mean_shape_scaled = pdm.mean_shape.flatten() * sim_scale  # (204,)
+        x_coords = mean_shape_scaled[:68]    # First 68 = all X values
+        y_coords = mean_shape_scaled[68:136] # Next 68 = all Y values
+        self.reference_shape = np.column_stack([x_coords, y_coords])  # (68, 2)
 
         print(f"Face aligner initialized")
         print(f"  Sim scale: {sim_scale}")
@@ -100,22 +105,12 @@ class OpenFace22FaceAligner:
         source_rigid = self._extract_rigid_points(landmarks_68)
         dest_rigid = self._extract_rigid_points(self.reference_shape)
 
-        # Compute scale (no rotation from Kabsch) - matching working commit approach
-        scale_identity = self._compute_scale_only(source_rigid, dest_rigid)
-        scale = scale_identity
-
-        # Apply INVERSE of p_rz rotation
-        # p_rz describes rotation FROM canonical TO tilted
-        # We need rotation FROM tilted TO canonical, which is -p_rz
-        angle = -p_rz
-        cos_a = np.cos(angle)
-        sin_a = np.sin(angle)
-
-        R = np.array([[cos_a, -sin_a],
-                      [sin_a,  cos_a]], dtype=np.float32)
-
-        # Combine scale and rotation
-        scale_rot_matrix = scale * R
+        # Match C++ exactly: use AlignShapesWithScale to compute BOTH scale and rotation
+        # via Kabsch algorithm. This does NOT use p_rz - the rotation comes from
+        # finding the optimal alignment between source and destination rigid points.
+        # C++ code: Face_utils.cpp line 127:
+        #   cv::Matx22f scale_rot_matrix = Utilities::AlignShapesWithScale(source_landmarks, destination_landmarks);
+        scale_rot_matrix = self._align_shapes_with_scale(source_rigid, dest_rigid)
 
         # Build 2×3 affine warp matrix using pose translation
         warp_matrix = self._build_warp_matrix(scale_rot_matrix, pose_tx, pose_ty)
@@ -197,6 +192,60 @@ class OpenFace22FaceAligner:
 
         return s_dst / s_src
 
+    def _align_shapes_with_scale(self, src: np.ndarray, dst: np.ndarray) -> np.ndarray:
+        """
+        Compute scale AND rotation using Kabsch algorithm (like C++ AlignShapesWithScale)
+
+        This is the correct approach used by OpenFace C++:
+        1. Mean-normalize both point sets
+        2. Compute RMS scale for each
+        3. Normalize to unit scale
+        4. Use Kabsch/SVD to find optimal rotation
+        5. Return scale * rotation matrix
+
+        Args:
+            src: (N, 2) source points (detected landmarks)
+            dst: (N, 2) destination points (reference shape)
+
+        Returns:
+            (2, 2) scale-rotation matrix
+        """
+        n = src.shape[0]
+
+        # 1. Mean normalize both
+        src_mean = src.mean(axis=0)
+        dst_mean = dst.mean(axis=0)
+        src_centered = src - src_mean
+        dst_centered = dst - dst_mean
+
+        # 2. Compute RMS scale for each
+        s_src = np.sqrt(np.sum(src_centered ** 2) / n)
+        s_dst = np.sqrt(np.sum(dst_centered ** 2) / n)
+
+        # 3. Normalize to unit scale
+        src_normed = src_centered / s_src
+        dst_normed = dst_centered / s_dst
+
+        # 4. Kabsch algorithm (SVD) to find optimal rotation
+        H = src_normed.T @ dst_normed
+        U, S, Vt = np.linalg.svd(H)
+
+        # Handle reflection (ensure proper rotation) - check BEFORE computing R
+        d = np.linalg.det(Vt.T @ U.T)
+        corr = np.eye(2)
+        if d < 0:
+            corr[1, 1] = -1
+
+        R = Vt.T @ corr @ U.T
+
+        # Note: NOT transposing R - testing if direct Kabsch matches C++
+
+        # 5. Combine scale and rotation
+        scale = s_dst / s_src
+        scale_rot = scale * R
+
+        return scale_rot.astype(np.float32)
+
     def _build_warp_matrix(self, scale_rot: np.ndarray, pose_tx: float, pose_ty: float) -> np.ndarray:
         """
         Build 2×3 affine warp matrix from 2×2 scale-rotation matrix and pose translation
@@ -233,9 +282,11 @@ class OpenFace22FaceAligner:
         # C++ code (lines 142-143):
         #   warp_matrix(0,2) = -T(0) + out_width/2;
         #   warp_matrix(1,2) = -T(1) + out_height/2;
-        # NO empirical shifts (+2, -2) - those were incorrect!
+        # We add y_offset to shift the face up slightly (negative = up)
+        # to account for small differences between Python CalcParams and C++ CLNF fitting
+
         warp_matrix[0, 2] = -T_transformed[0] + self.output_width / 2
-        warp_matrix[1, 2] = -T_transformed[1] + self.output_height / 2
+        warp_matrix[1, 2] = -T_transformed[1] + self.output_height / 2 + self.y_offset
 
         return warp_matrix
 
