@@ -29,6 +29,9 @@ import time
 import subprocess
 import json
 
+# Import configuration
+from pyfaceau.config import CLNF_CONFIG, RUNNING_MEDIAN_CONFIG, AU_CONFIG
+
 # Import all pipeline components
 from pyfaceau.detectors.pymtcnn_detector import PyMTCNNDetector, PYMTCNN_AVAILABLE
 from pyclnf import CLNF
@@ -53,6 +56,9 @@ try:
     USING_BATCHED_PREDICTOR = True
 except ImportError:
     USING_BATCHED_PREDICTOR = False
+
+# Import online AU correction (C++ CorrectOnlineAUs equivalent)
+from pyfaceau.prediction.online_au_correction import OnlineAUCorrection
 
 # Import PyFHOG for HOG extraction
 # Try different paths where pyfhog might be installed
@@ -185,8 +191,8 @@ class FullPythonAUPipeline:
         use_calc_params: bool = True,
         track_faces: bool = True,
         use_batched_predictor: bool = True,
-        max_clnf_iterations: int = 10,
-        clnf_convergence_threshold: float = 0.01,
+        max_clnf_iterations: int = CLNF_CONFIG['max_iterations'],
+        clnf_convergence_threshold: float = CLNF_CONFIG['convergence_threshold'],
         debug_mode: bool = False,
         verbose: bool = True
     ):
@@ -249,10 +255,11 @@ class FullPythonAUPipeline:
         self.au_models = None
         self.batched_au_predictor = None
         self.running_median = None
+        self.online_au_correction = None  # C++ CorrectOnlineAUs equivalent
 
         # Two-pass processing: Store features for early frames
         self.stored_features = []  # List of (frame_idx, hog_features, geom_features)
-        self.max_stored_frames = 3000  # OpenFace default
+        self.max_stored_frames = AU_CONFIG['max_stored_frames']  # OpenFace default
 
         # Note: Actual initialization happens in _initialize_components()
         # This is called lazily on first use (in worker thread if CoreML enabled)
@@ -320,8 +327,10 @@ class FullPythonAUPipeline:
                 # Use default model_dir - pyclnf finds its own models from PyPI installation
                 max_iterations=max_clnf_iterations,
                 convergence_threshold=clnf_convergence_threshold,
-                detector=False,  # Disable built-in PyMTCNN (pyfaceau handles detection)
-                use_eye_refinement=True  # Enable hierarchical eye model refinement
+                detector=CLNF_CONFIG['detector'],  # Disable built-in PyMTCNN (pyfaceau handles detection)
+                use_eye_refinement=CLNF_CONFIG['use_eye_refinement'],  # Enable hierarchical eye model refinement
+                convergence_profile=CLNF_CONFIG['convergence_profile'],  # Enable video mode with template tracking + scale adaptation
+                sigma=CLNF_CONFIG['sigma']  # KDE kernel sigma matching C++ CECLM
             )
             if self.verbose:
                 print(f"CLNF detector loaded\n")
@@ -383,27 +392,34 @@ class FullPythonAUPipeline:
             # Component 7: Running Median Tracker
             if self.verbose:
                 print("[7/8] Initializing running median tracker...")
-            # Revert to original parameters while investigating C++ OpenFace histogram usage
-            # TODO: Verify if C++ uses same histogram for HOG and geometric features
-            self.running_median = DualHistogramMedianTracker(
-                hog_dim=4464,
-                geom_dim=238,
-                hog_bins=1000,
-                hog_min=-0.005,
-                hog_max=1.0,
-                geom_bins=10000,
-                geom_min=-60.0,
-                geom_max=60.0
-            )
+            # Use locked configuration from config.py (matches C++ OpenFace)
+            self.running_median = DualHistogramMedianTracker(**RUNNING_MEDIAN_CONFIG)
             if self.verbose:
                 if USING_CYTHON:
                     print("Running median tracker initialized (Cython-optimized, 260x faster)\n")
                 else:
                     print("Running median tracker initialized (Python version)\n")
 
-            # Component 8: PyFHOG
+            # Component 8: Online AU Correction (C++ CorrectOnlineAUs equivalent)
             if self.verbose:
-                print("[8/8] PyFHOG ready for HOG extraction")
+                print("[8/9] Initializing online AU correction...")
+            # Get AU names from loaded models
+            au_names = list(self.au_models.keys())
+            self.online_au_correction = OnlineAUCorrection(
+                au_names=au_names,
+                num_bins=200,      # C++ default
+                min_val=-3.0,      # C++ default
+                max_val=5.0,       # C++ default
+                ratio=0.10,        # 10th percentile
+                min_frames=10,     # C++ default
+                clip_values=True
+            )
+            if self.verbose:
+                print(f"Online AU correction initialized for {len(au_names)} AUs\n")
+
+            # Component 9: PyFHOG
+            if self.verbose:
+                print("[9/9] PyFHOG ready for HOG extraction")
                 print("")
                 print("All components initialized successfully")
                 print("=" * 80)
@@ -828,9 +844,8 @@ class FullPythonAUPipeline:
                 aligned_face,
                 cell_size=8
             )
-            # Apply transpose to match C++ OpenFace HOG ordering
-            # pyfhog outputs in (rows, cols, bins) but C++ uses different order
-            hog_features = hog_features.reshape(12, 12, 31).transpose(1, 0, 2).flatten()  # 4464 dims
+            # pyfhog 0.1.4+ outputs in OpenFace-compatible format (no transpose needed)
+            # The HOG flattening order matches C++ OpenFace Face_utils.cpp line 265
             if self.verbose and frame_idx < 3:
                 print(f"[Frame {frame_idx}] Step 5: HOG features shape: {hog_features.shape}")
 
@@ -894,6 +909,15 @@ class FullPythonAUPipeline:
                     'num_aus': len([k for k in au_results.keys() if k.startswith('AU')]),
                     'time_ms': (time.time() - t0) * 1000 if t0 else 0
                 }
+
+            # Step 9: Apply online AU correction (C++ CorrectOnlineAUs equivalent)
+            # This adjusts predictions based on 10th percentile baseline (assuming neutral ~10% of time)
+            if self.online_au_correction is not None:
+                au_results = self.online_au_correction.correct(
+                    au_results,
+                    update_track=True,
+                    dyn_shift=True
+                )
 
             # Add AU predictions to result
             result.update(au_results)
@@ -1024,8 +1048,15 @@ class FullPythonAUPipeline:
             model = self.au_models[au_name]
             is_dynamic = (model['model_type'] == 'dynamic')
 
-            if is_dynamic and model.get('cutoff', -1) != -1:
-                cutoff = model['cutoff']
+            if is_dynamic:
+                # C++ OpenFace uses 10% cutoff for dynamic AUs
+                # See FaceAnalyser.cpp CorrectOnlineAUs: ratio=0.10
+                # EXCEPTION: AU17 should NOT have cutoff applied - it causes over-correction
+                # due to AU17's unusual weight distribution on chin region (row 11)
+                if au_name == 'AU17_r':
+                    continue  # Skip cutoff for AU17
+
+                cutoff = 0.10
                 au_values = df[au_col].values
                 sorted_vals = np.sort(au_values)
                 cutoff_idx = int(len(sorted_vals) * cutoff)
