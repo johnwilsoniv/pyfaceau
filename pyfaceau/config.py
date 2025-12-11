@@ -61,6 +61,7 @@ AU_CONFIG = {
     'cutoff_ratio': 0.10,            # 10th percentile baseline
     'min_frames': 10,                # Minimum frames before correction
     'skip_au17_cutoff': True,        # AU17 exception (unusual weight distribution)
+    'apply_online_dyn_shift': False,  # Online 10% shift (no impact in testing)
 
     # Two-pass processing
     'max_stored_frames': 3000,       # OpenFace default for re-prediction
