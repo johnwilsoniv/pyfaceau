@@ -34,7 +34,7 @@ from pyfaceau.config import CLNF_CONFIG, RUNNING_MEDIAN_CONFIG, AU_CONFIG
 
 # Import all pipeline components
 from pyfaceau.detectors.pymtcnn_detector import PyMTCNNDetector, PYMTCNN_AVAILABLE
-from pyclnf import CLNF
+# Note: CLNF import is done lazily in _initialize_components() to avoid circular import
 from pyfaceau.alignment.calc_params import CalcParams
 from pyfaceau.features.pdm import PDMParser
 from pyfaceau.alignment.face_aligner import OpenFace22FaceAligner
@@ -322,6 +322,9 @@ class FullPythonAUPipeline:
                 print("[2/8] Loading CLNF landmark detector (pyclnf)...")
                 print(f"  Max iterations: {max_clnf_iterations}")
                 print(f"  Convergence threshold: {clnf_convergence_threshold} pixels")
+
+            # Lazy import to avoid circular import (pyfaceau ↔ pyclnf)
+            from pyclnf import CLNF
 
             self.landmark_detector = CLNF(
                 # Use default model_dir - pyclnf finds its own models from PyPI installation
@@ -734,7 +737,8 @@ class FullPythonAUPipeline:
                 bbox_pyclnf = (bbox_x, bbox_y, bbox_w, bbox_h)
 
                 # Detect landmarks with CLNF optimization
-                landmarks_68, info = self.landmark_detector.fit(frame, bbox_pyclnf)
+                # Pass detector_type='pymtcnn' so fit() applies the MTCNN bbox correction
+                landmarks_68, info = self.landmark_detector.fit(frame, bbox_pyclnf, detector_type='pymtcnn')
                 converged = info['converged']
                 num_iterations = info['iterations']
 
@@ -771,7 +775,14 @@ class FullPythonAUPipeline:
                     # Convert bbox from [x1, y1, x2, y2] to [x, y, width, height] for pyclnf
                     bbox_x, bbox_y = bbox[0], bbox[1]
                     bbox_w, bbox_h = bbox[2] - bbox[0], bbox[3] - bbox[1]
-                    bbox_pyclnf = (bbox_x, bbox_y, bbox_w, bbox_h)
+
+                    # Apply OpenFace MTCNN bbox calibration (matches C++ FaceDetectorMTCNN.cpp)
+                    cal_x = bbox_x + bbox_w * (-0.0075)
+                    cal_y = bbox_y + bbox_h * 0.2459
+                    cal_w = bbox_w * 1.0323
+                    cal_h = bbox_h * 0.7751
+                    bbox_pyclnf = (cal_x, cal_y, cal_w, cal_h)
+
                     landmarks_68, info = self.landmark_detector.fit(frame, bbox_pyclnf)
                     converged = info['converged']
                     num_iterations = info['iterations']
@@ -910,13 +921,17 @@ class FullPythonAUPipeline:
                     'time_ms': (time.time() - t0) * 1000 if t0 else 0
                 }
 
-            # Step 9: Apply online AU correction (C++ CorrectOnlineAUs equivalent)
-            # This adjusts predictions based on 10th percentile baseline (assuming neutral ~10% of time)
+            # Step 9: Update prediction tracking (but DON'T apply online correction)
+            # Fix 3: Online AU correction - C++ applies both online shift AND post-hoc cutoff
+            # Configurable via AU_CONFIG['apply_online_dyn_shift']
             if self.online_au_correction is not None:
+                # C++ applies 10% percentile shift during online processing (CorrectOnlineAUs)
+                # AND applies per-model cutoffs post-hoc in ExtractAllPredictionsOfflineReg
+                apply_shift = AU_CONFIG.get('apply_online_dyn_shift', False)
                 au_results = self.online_au_correction.correct(
                     au_results,
                     update_track=True,
-                    dyn_shift=True
+                    dyn_shift=apply_shift  # Apply online 10% shift if enabled
                 )
 
             # Add AU predictions to result
@@ -1049,17 +1064,33 @@ class FullPythonAUPipeline:
             is_dynamic = (model['model_type'] == 'dynamic')
 
             if is_dynamic:
-                # C++ OpenFace uses 10% cutoff for dynamic AUs
-                # See FaceAnalyser.cpp CorrectOnlineAUs: ratio=0.10
-                # EXCEPTION: AU17 should NOT have cutoff applied - it causes over-correction
-                # due to AU17's unusual weight distribution on chin region (row 11)
-                if au_name == 'AU17_r':
-                    continue  # Skip cutoff for AU17
+                # Fix 1: Skip AU17 cutoff if configured (unusual weight distribution)
+                # AU17 has lowest cutoff (20%) which is too aggressive
+                if au_name == 'AU17_r' and AU_CONFIG.get('skip_au17_cutoff', False):
+                    continue
 
-                cutoff = 0.10
+                # Use the model's learned cutoff value (stored in the .dat file)
+                # This is the percentile at which to compute the baseline offset
+                # e.g., AU02 cutoff=0.75 means use 75th percentile as baseline
+                # See SVR_dynamic_lin_regressors.cpp for how cutoff is used
+                model_cutoff = model.get('cutoff', 0.0)
+
+                # Skip if no valid cutoff (shouldn't happen for dynamic models)
+                if model_cutoff <= 0 or model_cutoff >= 1.0:
+                    continue
+
+                # Fix 2: Match C++ - sort only VALID (non-zero) predictions
+                # C++ FaceAnalyser.cpp:656 uses au_good which excludes zeros
                 au_values = df[au_col].values
-                sorted_vals = np.sort(au_values)
-                cutoff_idx = int(len(sorted_vals) * cutoff)
+                valid_mask = au_values > 0.001  # Filter out zeros/near-zeros
+                valid_vals = au_values[valid_mask]
+
+                # Need enough valid values to compute meaningful percentile
+                if len(valid_vals) < 10:
+                    continue
+
+                sorted_vals = np.sort(valid_vals)
+                cutoff_idx = int(len(sorted_vals) * model_cutoff)
                 offset = sorted_vals[cutoff_idx]
                 df[au_col] = np.clip(au_values - offset, 0.0, 5.0)
 
