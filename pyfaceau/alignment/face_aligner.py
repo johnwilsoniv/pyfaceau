@@ -128,8 +128,16 @@ class OpenFace22FaceAligner:
             if triangulation is None:
                 raise ValueError("triangulation required when apply_mask=True")
 
-            # Transform landmarks to aligned space
-            aligned_landmarks = self._transform_landmarks(landmarks_68, warp_matrix)
+            # Use reference shape for masking (centered in output image)
+            # This matches C++ OpenFace behavior which uses a consistent mask
+            # based on the mean face shape, not per-frame detected landmarks
+            center = np.array([self.output_width / 2, self.output_height / 2])
+            aligned_landmarks = self.reference_shape + center
+
+            # Apply correction shift to match C++ mask centering
+            # Empirically determined: C++ masks are shifted ~(5, 3) pixels from naive center
+            aligned_landmarks[:, 0] += 5.0
+            aligned_landmarks[:, 1] += 3.0
 
             # Adjust eyebrow landmarks upward to include forehead (like C++)
             # Indices 17-26 are eyebrows, 0 and 16 are jaw corners
