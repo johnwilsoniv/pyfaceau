@@ -5,7 +5,7 @@ Full Python AU Extraction Pipeline - End-to-End
 This script integrates all Python components into a complete AU extraction pipeline:
 1. Face Detection (PyMTCNN with CUDA/CoreML/CPU support)
 2. Landmark Detection (Cunjian PFLD)
-3. 3D Pose Estimation (CalcParams or simplified PnP)
+3. 3D Pose Estimation (from pyclnf CLNF optimization params)
 4. Face Alignment (OpenFace 2.2 algorithm)
 5. HOG Feature Extraction (PyFHOG)
 6. Geometric Feature Extraction (PDM)
@@ -208,7 +208,7 @@ class FullPythonAUPipeline:
             triangulation_file: Path to triangulation file for masking
             patch_expert_file: Path to CLNF patch expert file
             mtcnn_backend: PyMTCNN backend ('auto', 'cuda', 'coreml', 'cpu') (default: 'auto')
-            use_calc_params: Use full CalcParams for pose estimation (default: True)
+            use_calc_params: DEPRECATED - pyclnf params are now used instead (default: True)
             track_faces: Use face tracking between frames (default: True)
             use_batched_predictor: Use optimized batched AU predictor (default: True)
             max_clnf_iterations: Maximum CLNF optimization iterations (default: 10)
@@ -345,11 +345,10 @@ class FullPythonAUPipeline:
             if self.verbose:
                 print(f"PDM loaded: {self.pdm_parser.mean_shape.shape[0]//3} landmarks\n")
 
-            # Initialize CalcParams for pose estimation
-            if self.use_calc_params:
-                self.calc_params = CalcParams(self.pdm_parser)
-            else:
-                self.calc_params = None
+            # Note: CalcParams is no longer used for geometric features
+            # pyclnf's optimized params are used instead (see GEOMETRIC_FEATURES_BUG.md)
+            # CalcParams is kept for backwards compatibility but not initialized by default
+            self.calc_params = None
 
             # Component 4: Face Aligner
             if self.verbose:
@@ -738,7 +737,9 @@ class FullPythonAUPipeline:
 
                 # Detect landmarks with CLNF optimization
                 # Pass detector_type='pymtcnn' so fit() applies the MTCNN bbox correction
-                landmarks_68, info = self.landmark_detector.fit(frame, bbox_pyclnf, detector_type='pymtcnn')
+                # CRITICAL: Use return_params=True to get params_local for geometric features
+                # (Using CalcParams separately produces wrong scale - see GEOMETRIC_FEATURES_BUG.md)
+                landmarks_68, info = self.landmark_detector.fit(frame, bbox_pyclnf, detector_type='pymtcnn', return_params=True)
                 converged = info['converged']
                 num_iterations = info['iterations']
 
@@ -783,32 +784,35 @@ class FullPythonAUPipeline:
                     cal_h = bbox_h * 0.7751
                     bbox_pyclnf = (cal_x, cal_y, cal_w, cal_h)
 
-                    landmarks_68, info = self.landmark_detector.fit(frame, bbox_pyclnf)
+                    # CRITICAL: Use return_params=True to get params_local for geometric features
+                    landmarks_68, info = self.landmark_detector.fit(frame, bbox_pyclnf, return_params=True)
                     converged = info['converged']
                     num_iterations = info['iterations']
                 else:
                     # Not tracking or already re-detected - fail
                     raise
 
-            # Step 3: Estimate 3D pose
+            # Step 3: Extract pose from pyclnf params
+            # CRITICAL FIX: Use params from pyclnf optimization, NOT CalcParams!
+            # CalcParams on raw landmarks produces wrong scale params_local (range -292 to 772)
+            # pyclnf params_local has correct range (-29 to 32) matching C++ OpenFace
+            # See GEOMETRIC_FEATURES_BUG.md for details
             t0 = time.time() if debug_info is not None else None
             if self.verbose and frame_idx < 3:
-                print(f"[Frame {frame_idx}] Step 3: Estimating 3D pose...")
-            if self.use_calc_params and self.calc_params:
-                # Full CalcParams optimization
-                # Pass landmarks as (68, 2) array - CalcParams handles format conversion
-                params_global, params_local = self.calc_params.calc_params(
-                    landmarks_68
-                )
+                print(f"[Frame {frame_idx}] Step 3: Extracting pose from pyclnf params...")
+
+            if 'params' in info:
+                # Use params from pyclnf CLNF optimization (CORRECT approach)
+                clnf_params = info['params']
+                params_global = clnf_params[:6]
+                params_local = clnf_params[6:]
 
                 # Extract pose parameters
                 scale = params_global[0]
                 rx, ry, rz = params_global[1:4]
                 tx, ty = params_global[4:6]
             else:
-                # Simplified approach: use bounding box for rough pose
-                # (This is a fallback - CalcParams is recommended)
-                # PyMTCNN bbox format: [x, y, width, height]
+                # Fallback: use bounding box for rough pose (shouldn't happen with return_params=True)
                 scale = 1.0
                 rx = ry = rz = 0.0
                 tx = bbox[0] + bbox[2] / 2  # x + width/2
@@ -821,7 +825,8 @@ class FullPythonAUPipeline:
                     'rotation': [float(rx), float(ry), float(rz)],
                     'translation': [float(tx), float(ty)],
                     'params_local_shape': params_local.shape,
-                    'used_calc_params': self.use_calc_params and (self.calc_params is not None),
+                    'params_local_range': [float(params_local.min()), float(params_local.max())],
+                    'used_pyclnf_params': 'params' in info,
                     'time_ms': (time.time() - t0) * 1000 if t0 else 0
                 }
 
