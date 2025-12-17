@@ -739,6 +739,8 @@ def export_au_to_onnx(
         output_path: Path to save .onnx file
         opset_version: ONNX opset version
     """
+    # Move model to CPU for ONNX export (ONNX is device-agnostic)
+    model = model.cpu()
     model.eval()
     dummy_input = torch.randn(1, 3, 112, 112)
 

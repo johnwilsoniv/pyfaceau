@@ -519,6 +519,8 @@ def main():
                         help='Disable video-stratified split (use random)')
     parser.add_argument('--warmup-epochs', type=int, default=5,
                         help='Number of warmup epochs for LR scheduler')
+    parser.add_argument('--multi-gpu', action='store_true',
+                        help='Enable multi-GPU training with DataParallel')
 
     args = parser.parse_args()
 
@@ -573,6 +575,13 @@ def main():
         )
     num_params = sum(p.numel() for p in model.parameters())
     print(f"Model parameters: {num_params:,}")
+
+    # Multi-GPU with DataParallel
+    if args.multi_gpu and torch.cuda.device_count() > 1:
+        print(f"Multi-GPU: Using {torch.cuda.device_count()} GPUs with DataParallel")
+        model = torch.nn.DataParallel(model)
+    elif args.multi_gpu:
+        print("Multi-GPU: Requested but only 1 GPU available, using single GPU")
 
     # Create trainer
     trainer = AUTrainer(
