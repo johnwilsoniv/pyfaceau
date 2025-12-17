@@ -483,10 +483,24 @@ class LandmarkPoseTrainer:
 
     def save_history(self):
         """Save training history to JSON."""
+        def convert_to_python_types(obj):
+            """Recursively convert numpy types to Python native types."""
+            if isinstance(obj, dict):
+                return {k: convert_to_python_types(v) for k, v in obj.items()}
+            elif isinstance(obj, list):
+                return [convert_to_python_types(v) for v in obj]
+            elif isinstance(obj, (np.floating, np.float32, np.float64)):
+                return float(obj)
+            elif isinstance(obj, (np.integer, np.int32, np.int64)):
+                return int(obj)
+            elif isinstance(obj, np.ndarray):
+                return obj.tolist()
+            return obj
+
         history = {
-            'train': self.train_history,
-            'val': self.val_history,
-            'best_val_loss': self.best_val_loss,
+            'train': convert_to_python_types(self.train_history),
+            'val': convert_to_python_types(self.val_history),
+            'best_val_loss': float(self.best_val_loss) if self.best_val_loss != float('inf') else None,
         }
         with open(self.output_dir / 'training_history.json', 'w') as f:
             json.dump(history, f, indent=2)
@@ -657,6 +671,8 @@ def main():
                         help='Disable video-stratified split (use random)')
     parser.add_argument('--warmup-epochs', type=int, default=5,
                         help='Number of warmup epochs for LR scheduler')
+    parser.add_argument('--multi-gpu', action='store_true',
+                        help='Enable multi-GPU training with DataParallel')
 
     args = parser.parse_args()
 
@@ -716,6 +732,13 @@ def main():
 
     num_params = sum(p.numel() for p in model.parameters())
     print(f"Model parameters: {num_params:,}")
+
+    # Multi-GPU support
+    if args.multi_gpu and torch.cuda.device_count() > 1:
+        print(f"Multi-GPU: Using {torch.cuda.device_count()} GPUs with DataParallel")
+        model = torch.nn.DataParallel(model)
+    elif args.multi_gpu:
+        print("Multi-GPU: Requested but only 1 GPU available, using single GPU")
 
     # Mixed precision
     use_mixed_precision = not args.no_mixed_precision
