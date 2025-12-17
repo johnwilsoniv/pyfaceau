@@ -1,5 +1,9 @@
 """
-Training script for UnifiedLandmarkPoseNet
+Training script for Landmark+Pose Neural Networks
+
+Supports two model architectures:
+1. UnifiedLandmarkPoseNet (MobileNetV2): Fast but ~2px MAE accuracy
+2. HeatmapLandmarkNet (ResNet + U-Net): Higher accuracy targeting <0.5px MAE
 
 Trains a neural network to predict:
 - 68 facial landmarks (2D coordinates)
@@ -12,9 +16,14 @@ Features:
 - Mixed precision (FP16) training for faster GPU training
 - TensorBoard logging for training visualization
 - Automatic ONNX/CoreML export after training
+- Early stopping when target MAE is achieved
 
 Usage:
+    # Train direct regression model (faster)
     python train_landmark_pose.py --data training_data.h5 --output models/landmark_pose
+
+    # Train heatmap model (higher accuracy)
+    python train_landmark_pose.py --data training_data.h5 --output models/heatmap --model heatmap
 
     # Resume training
     python train_landmark_pose.py --data training_data.h5 --resume models/landmark_pose/checkpoint_best.pt
@@ -36,7 +45,10 @@ import torch.nn as nn
 from torch.utils.data import DataLoader, random_split
 from torch.cuda.amp import GradScaler, autocast
 
-from .landmark_pose_net import UnifiedLandmarkPoseNet, LandmarkPoseLoss
+from .landmark_pose_net import (
+    UnifiedLandmarkPoseNet, LandmarkPoseLoss,
+    HeatmapLandmarkNet, HeatmapLoss
+)
 
 # Enable cuDNN autotuning for best performance
 torch.backends.cudnn.benchmark = True
@@ -44,12 +56,50 @@ torch.backends.cudnn.benchmark = True
 # Add parent path for data module
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from data.hdf5_dataset import PyTorchTrainingDataset
+from pyfaceau.data.hdf5_dataset import PyTorchTrainingDataset, create_video_stratified_split
+
+
+class WarmupCosineScheduler:
+    """Learning rate scheduler with linear warmup and cosine annealing."""
+
+    def __init__(self, optimizer, warmup_epochs: int, total_epochs: int, min_lr: float = 1e-6):
+        self.optimizer = optimizer
+        self.warmup_epochs = warmup_epochs
+        self.total_epochs = total_epochs
+        self.min_lr = min_lr
+        self.base_lrs = [group['lr'] for group in optimizer.param_groups]
+        self.current_epoch = 0
+
+    def step(self):
+        self.current_epoch += 1
+        if self.current_epoch <= self.warmup_epochs:
+            # Linear warmup
+            progress = self.current_epoch / self.warmup_epochs
+            for param_group, base_lr in zip(self.optimizer.param_groups, self.base_lrs):
+                param_group['lr'] = base_lr * progress
+        else:
+            # Cosine annealing
+            progress = (self.current_epoch - self.warmup_epochs) / (self.total_epochs - self.warmup_epochs)
+            for param_group, base_lr in zip(self.optimizer.param_groups, self.base_lrs):
+                param_group['lr'] = self.min_lr + (base_lr - self.min_lr) * 0.5 * (1 + np.cos(np.pi * progress))
+
+    def get_lr(self):
+        return [group['lr'] for group in self.optimizer.param_groups]
+
+    def state_dict(self):
+        return {'current_epoch': self.current_epoch}
+
+    def load_state_dict(self, state_dict):
+        self.current_epoch = state_dict['current_epoch']
 
 
 class LandmarkPoseTrainer:
     """
-    Trainer for UnifiedLandmarkPoseNet.
+    Trainer for landmark pose prediction models.
+
+    Supports both:
+    - UnifiedLandmarkPoseNet (direct regression)
+    - HeatmapLandmarkNet (heatmap + refinement)
 
     Handles training loop, validation, checkpointing, and metrics tracking.
     Supports mixed precision training and TensorBoard logging.
@@ -57,7 +107,7 @@ class LandmarkPoseTrainer:
 
     def __init__(
         self,
-        model: UnifiedLandmarkPoseNet,
+        model: nn.Module,
         train_loader: DataLoader,
         val_loader: DataLoader,
         device: torch.device,
@@ -67,8 +117,16 @@ class LandmarkPoseTrainer:
         landmark_weight: float = 1.0,
         global_params_weight: float = 0.1,
         local_params_weight: float = 0.01,
+        wing_w: float = 2.0,
+        wing_epsilon: float = 0.5,
         use_mixed_precision: bool = True,
         tensorboard_writer=None,
+        use_heatmap_model: bool = False,
+        heatmap_weight: float = 1.0,
+        coord_weight: float = 10.0,
+        consistency_weight: float = 0.5,
+        num_epochs: int = 100,
+        warmup_epochs: int = 5,
     ):
         self.model = model.to(device)
         self.train_loader = train_loader
@@ -76,13 +134,26 @@ class LandmarkPoseTrainer:
         self.device = device
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.use_heatmap_model = use_heatmap_model
 
-        # Loss function
-        self.criterion = LandmarkPoseLoss(
-            landmark_weight=landmark_weight,
-            global_params_weight=global_params_weight,
-            local_params_weight=local_params_weight,
-        )
+        # Loss function depends on model type
+        if use_heatmap_model:
+            self.criterion = HeatmapLoss(
+                heatmap_weight=heatmap_weight,
+                coord_weight=coord_weight,
+                consistency_weight=consistency_weight,
+                global_params_weight=global_params_weight,
+                local_params_weight=local_params_weight,
+            )
+        else:
+            # Direct regression model with Wing loss
+            self.criterion = LandmarkPoseLoss(
+                landmark_weight=landmark_weight,
+                global_params_weight=global_params_weight,
+                local_params_weight=local_params_weight,
+                wing_w=wing_w,
+                wing_epsilon=wing_epsilon,
+            )
 
         # Optimizer
         self.optimizer = torch.optim.AdamW(
@@ -91,12 +162,12 @@ class LandmarkPoseTrainer:
             weight_decay=weight_decay,
         )
 
-        # Learning rate scheduler (cosine annealing with warm restarts)
-        self.scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
+        # Learning rate scheduler with warmup + cosine annealing
+        self.scheduler = WarmupCosineScheduler(
             self.optimizer,
-            T_0=10,  # Restart every 10 epochs
-            T_mult=2,  # Double period after each restart
-            eta_min=1e-6,
+            warmup_epochs=warmup_epochs,
+            total_epochs=num_epochs,
+            min_lr=1e-6,
         )
 
         # Mixed precision training
@@ -120,6 +191,8 @@ class LandmarkPoseTrainer:
         total_lm_loss = 0.0
         total_gp_loss = 0.0
         total_lp_loss = 0.0
+        total_heatmap_loss = 0.0
+        total_consistency_loss = 0.0
         num_batches = 0
 
         for batch in self.train_loader:
@@ -165,11 +238,19 @@ class LandmarkPoseTrainer:
 
                 self.optimizer.step()
 
-            # Accumulate
+            # Accumulate losses
             total_loss += losses['total'].item()
-            total_lm_loss += losses['landmark'].item()
             total_gp_loss += losses['global_params'].item()
             total_lp_loss += losses['local_params'].item()
+
+            # Handle different loss keys for different models
+            if self.use_heatmap_model:
+                total_lm_loss += losses['coord'].item()
+                total_heatmap_loss += losses['heatmap'].item()
+                total_consistency_loss += losses['consistency'].item()
+            else:
+                total_lm_loss += losses['landmark'].item()
+
             num_batches += 1
 
         # Average losses
@@ -179,6 +260,10 @@ class LandmarkPoseTrainer:
             'global_params_loss': total_gp_loss / num_batches,
             'local_params_loss': total_lp_loss / num_batches,
         }
+
+        if self.use_heatmap_model:
+            metrics['heatmap_loss'] = total_heatmap_loss / num_batches
+            metrics['consistency_loss'] = total_consistency_loss / num_batches
 
         return metrics
 
@@ -191,6 +276,8 @@ class LandmarkPoseTrainer:
         total_lm_loss = 0.0
         total_gp_loss = 0.0
         total_lp_loss = 0.0
+        total_heatmap_loss = 0.0
+        total_consistency_loss = 0.0
         num_batches = 0
 
         # For correlation computation
@@ -214,11 +301,19 @@ class LandmarkPoseTrainer:
             }
             losses = self.criterion(pred, target)
 
-            # Accumulate
+            # Accumulate losses
             total_loss += losses['total'].item()
-            total_lm_loss += losses['landmark'].item()
             total_gp_loss += losses['global_params'].item()
             total_lp_loss += losses['local_params'].item()
+
+            # Handle different loss keys for different models
+            if self.use_heatmap_model:
+                total_lm_loss += losses['coord'].item()
+                total_heatmap_loss += losses['heatmap'].item()
+                total_consistency_loss += losses['consistency'].item()
+            else:
+                total_lm_loss += losses['landmark'].item()
+
             num_batches += 1
 
             # Collect for correlation
@@ -233,15 +328,25 @@ class LandmarkPoseTrainer:
             'local_params_loss': total_lp_loss / num_batches,
         }
 
+        if self.use_heatmap_model:
+            metrics['heatmap_loss'] = total_heatmap_loss / num_batches
+            metrics['consistency_loss'] = total_consistency_loss / num_batches
+
         # Compute landmark correlation
         pred_lm = np.concatenate(all_pred_lm, axis=0).reshape(-1)
         target_lm = np.concatenate(all_target_lm, axis=0).reshape(-1)
         correlation = np.corrcoef(pred_lm, target_lm)[0, 1]
         metrics['landmark_correlation'] = correlation
 
-        # Compute mean absolute error for landmarks
+        # Compute mean absolute error for landmarks (per-coordinate)
         mae = np.abs(pred_lm - target_lm).mean()
         metrics['landmark_mae'] = mae
+
+        # Also compute per-landmark Euclidean distance
+        pred_lm_2d = np.concatenate(all_pred_lm, axis=0)  # (N, 68, 2)
+        target_lm_2d = np.concatenate(all_target_lm, axis=0)  # (N, 68, 2)
+        euclidean_dist = np.sqrt(((pred_lm_2d - target_lm_2d) ** 2).sum(axis=-1)).mean()
+        metrics['landmark_euclidean'] = euclidean_dist
 
         return metrics
 
@@ -250,6 +355,8 @@ class LandmarkPoseTrainer:
         num_epochs: int,
         save_every: int = 5,
         early_stopping_patience: int = 20,
+        early_stopping_min_delta: float = 0.001,
+        target_mae: float = 0.5,
     ):
         """
         Full training loop.
@@ -258,6 +365,8 @@ class LandmarkPoseTrainer:
             num_epochs: Number of epochs to train
             save_every: Save checkpoint every N epochs
             early_stopping_patience: Stop if no improvement for N epochs
+            early_stopping_min_delta: Minimum improvement to reset patience
+            target_mae: Target MAE in pixels - stop early if achieved
         """
         no_improvement_count = 0
         start_epoch = self.epoch
@@ -291,7 +400,8 @@ class LandmarkPoseTrainer:
                 f"Train Loss: {train_metrics['loss']:.4f} | "
                 f"Val Loss: {val_metrics['loss']:.4f} | "
                 f"LM Corr: {val_metrics['landmark_correlation']:.4f} | "
-                f"LM MAE: {val_metrics['landmark_mae']:.2f}px | "
+                f"MAE: {val_metrics['landmark_mae']:.3f}px | "
+                f"Euclid: {val_metrics['landmark_euclidean']:.3f}px | "
                 f"Time: {epoch_time:.1f}s"
             )
 
@@ -303,14 +413,19 @@ class LandmarkPoseTrainer:
                 self.writer.add_scalar('Loss/val_landmark', val_metrics['landmark_loss'], epoch)
                 self.writer.add_scalar('Metrics/landmark_correlation', val_metrics['landmark_correlation'], epoch)
                 self.writer.add_scalar('Metrics/landmark_mae', val_metrics['landmark_mae'], epoch)
+                self.writer.add_scalar('Metrics/landmark_euclidean', val_metrics['landmark_euclidean'], epoch)
                 self.writer.add_scalar('LR', self.optimizer.param_groups[0]['lr'], epoch)
+                if self.use_heatmap_model:
+                    self.writer.add_scalar('Loss/train_heatmap', train_metrics.get('heatmap_loss', 0), epoch)
+                    self.writer.add_scalar('Loss/val_heatmap', val_metrics.get('heatmap_loss', 0), epoch)
 
-            # Check for improvement
-            if val_metrics['loss'] < self.best_val_loss:
+            # Check for improvement (must improve by at least min_delta)
+            improvement = self.best_val_loss - val_metrics['loss']
+            if improvement > early_stopping_min_delta:
                 self.best_val_loss = val_metrics['loss']
                 self.save_checkpoint('checkpoint_best.pt')
                 no_improvement_count = 0
-                print(f"  -> New best model saved (val_loss: {self.best_val_loss:.4f})")
+                print(f"  -> New best model saved (val_loss: {self.best_val_loss:.4f}, improved by {improvement:.4f})")
             else:
                 no_improvement_count += 1
 
@@ -318,9 +433,15 @@ class LandmarkPoseTrainer:
             if (epoch + 1) % save_every == 0:
                 self.save_checkpoint(f'checkpoint_epoch_{epoch + 1:03d}.pt')
 
+            # Check if target MAE achieved
+            if val_metrics['landmark_mae'] <= target_mae:
+                print(f"\n*** Target MAE {target_mae}px achieved! (actual: {val_metrics['landmark_mae']:.3f}px) ***")
+                self.save_checkpoint('checkpoint_best.pt')
+                break
+
             # Early stopping
             if no_improvement_count >= early_stopping_patience:
-                print(f"\nEarly stopping triggered after {epoch + 1} epochs")
+                print(f"\nEarly stopping triggered after {epoch + 1} epochs (no improvement > {early_stopping_min_delta} for {early_stopping_patience} epochs)")
                 break
 
         # Save final checkpoint
@@ -377,6 +498,8 @@ def create_data_loaders(
     val_split: float = 0.1,
     num_workers: int = 4,
     seed: int = 42,
+    augment: bool = True,
+    video_stratified: bool = True,
 ) -> Tuple[DataLoader, DataLoader]:
     """
     Create training and validation data loaders.
@@ -387,26 +510,45 @@ def create_data_loaders(
         val_split: Fraction of data for validation
         num_workers: Number of data loading workers
         seed: Random seed for split
+        augment: Whether to apply data augmentation to training data
+        video_stratified: Whether to split by video (prevents data leakage)
 
     Returns:
         Tuple of (train_loader, val_loader)
     """
-    # Load dataset
-    full_dataset = PyTorchTrainingDataset(h5_path, load_images=True, load_hog=False)
-
-    # Split into train/val
-    total_size = len(full_dataset)
-    val_size = int(total_size * val_split)
-    train_size = total_size - val_size
-
-    generator = torch.Generator().manual_seed(seed)
-    train_dataset, val_dataset = random_split(
-        full_dataset,
-        [train_size, val_size],
-        generator=generator,
+    # Load dataset with augmentation enabled for training
+    full_dataset = PyTorchTrainingDataset(
+        h5_path,
+        load_images=True,
+        load_hog=False,
+        augment=augment,  # Will be applied during training
+        augment_prob=0.5,
     )
 
-    # Create loaders
+    # Split into train/val - preferring video-stratified split
+    if video_stratified and create_video_stratified_split is not None:
+        print("Using video-stratified train/val split (prevents data leakage)")
+        train_dataset, val_dataset = create_video_stratified_split(
+            full_dataset,
+            val_split=val_split,
+            seed=seed,
+        )
+    else:
+        # Fallback to random split
+        print("Using random train/val split (WARNING: may have data leakage)")
+        total_size = len(full_dataset)
+        val_size = int(total_size * val_split)
+        train_size = total_size - val_size
+
+        generator = torch.Generator().manual_seed(seed)
+        train_dataset, val_dataset = random_split(
+            full_dataset,
+            [train_size, val_size],
+            generator=generator,
+        )
+        print(f"Train/val split: {train_size}/{val_size} samples")
+
+    # Create loaders with multiple workers for fast batch assembly
     train_loader = DataLoader(
         train_dataset,
         batch_size=batch_size,
@@ -414,6 +556,7 @@ def create_data_loaders(
         num_workers=num_workers,
         pin_memory=True,
         drop_last=True,
+        persistent_workers=True if num_workers > 0 else False,
     )
 
     val_loader = DataLoader(
@@ -422,19 +565,24 @@ def create_data_loaders(
         shuffle=False,
         num_workers=num_workers,
         pin_memory=True,
+        persistent_workers=True if num_workers > 0 else False,
     )
 
     return train_loader, val_loader
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Train UnifiedLandmarkPoseNet')
+    parser = argparse.ArgumentParser(description='Train Landmark+Pose Neural Network')
 
     # Data
     parser.add_argument('--data', type=str, required=True,
                         help='Path to HDF5 training data')
     parser.add_argument('--output', type=str, default='models/landmark_pose',
                         help='Output directory for checkpoints')
+
+    # Model selection
+    parser.add_argument('--model', type=str, default='direct', choices=['direct', 'heatmap'],
+                        help='Model type: direct (MobileNetV2) or heatmap (ResNet+U-Net)')
 
     # Training
     parser.add_argument('--epochs', type=int, default=100,
@@ -446,17 +594,37 @@ def main():
     parser.add_argument('--weight-decay', type=float, default=1e-4,
                         help='Weight decay')
 
-    # Loss weights
+    # Loss weights (direct regression model)
     parser.add_argument('--lm-weight', type=float, default=1.0,
-                        help='Landmark loss weight')
+                        help='Landmark loss weight (direct model)')
     parser.add_argument('--gp-weight', type=float, default=0.1,
                         help='Global params loss weight')
     parser.add_argument('--lp-weight', type=float, default=0.01,
                         help='Local params loss weight')
 
-    # Model
+    # Wing loss parameters (tighter = better sub-pixel accuracy)
+    parser.add_argument('--wing-w', type=float, default=2.0,
+                        help='Wing loss w parameter (threshold for linear)')
+    parser.add_argument('--wing-epsilon', type=float, default=0.5,
+                        help='Wing loss epsilon (smaller = steeper penalty for small errors)')
+
+    # Heatmap model loss weights
+    parser.add_argument('--heatmap-weight', type=float, default=1.0,
+                        help='Heatmap loss weight (heatmap model)')
+    parser.add_argument('--coord-weight', type=float, default=10.0,
+                        help='Coordinate loss weight (heatmap model)')
+    parser.add_argument('--consistency-weight', type=float, default=0.5,
+                        help='Consistency loss weight (heatmap model)')
+
+    # Target accuracy
+    parser.add_argument('--target-mae', type=float, default=0.5,
+                        help='Target MAE in pixels - stop training if achieved')
+    parser.add_argument('--min-delta', type=float, default=0.001,
+                        help='Minimum improvement for early stopping reset')
+
+    # Model architecture
     parser.add_argument('--width-mult', type=float, default=1.0,
-                        help='MobileNetV2 width multiplier')
+                        help='MobileNetV2 width multiplier (direct model only)')
 
     # Resume
     parser.add_argument('--resume', type=str, default=None,
@@ -477,6 +645,18 @@ def main():
                         help='Enable TensorBoard logging')
     parser.add_argument('--no-mixed-precision', action='store_true',
                         help='Disable mixed precision training')
+
+    # Best practices options
+    parser.add_argument('--augment', action='store_true', default=True,
+                        help='Enable data augmentation (default: enabled)')
+    parser.add_argument('--no-augment', action='store_true',
+                        help='Disable data augmentation')
+    parser.add_argument('--video-stratified', action='store_true', default=True,
+                        help='Use video-stratified split (default: enabled)')
+    parser.add_argument('--no-video-stratified', action='store_true',
+                        help='Disable video-stratified split (use random)')
+    parser.add_argument('--warmup-epochs', type=int, default=5,
+                        help='Number of warmup epochs for LR scheduler')
 
     args = parser.parse_args()
 
@@ -505,18 +685,35 @@ def main():
         except ImportError:
             print("Warning: TensorBoard not available, skipping logging")
 
+    # Handle negation flags
+    use_augment = args.augment and not args.no_augment
+    use_video_stratified = args.video_stratified and not args.no_video_stratified
+
     # Create data loaders
     print(f"Loading data from: {args.data}")
+    print(f"Augmentation: {'enabled' if use_augment else 'disabled'}")
+    print(f"Video-stratified split: {'enabled' if use_video_stratified else 'disabled'}")
+    print(f"LR warmup: {args.warmup_epochs} epochs")
+
     train_loader, val_loader = create_data_loaders(
         args.data,
         batch_size=args.batch_size,
         val_split=args.val_split,
         num_workers=args.num_workers,
         seed=args.seed,
+        augment=use_augment,
+        video_stratified=use_video_stratified,
     )
 
-    # Create model
-    model = UnifiedLandmarkPoseNet(width_mult=args.width_mult)
+    # Create model based on type
+    use_heatmap_model = args.model == 'heatmap'
+    if use_heatmap_model:
+        print("Using HeatmapLandmarkNet (high-accuracy heatmap + refinement)")
+        model = HeatmapLandmarkNet()
+    else:
+        print("Using UnifiedLandmarkPoseNet (MobileNetV2 direct regression)")
+        model = UnifiedLandmarkPoseNet(width_mult=args.width_mult)
+
     num_params = sum(p.numel() for p in model.parameters())
     print(f"Model parameters: {num_params:,}")
 
@@ -536,22 +733,35 @@ def main():
         output_dir=args.output,
         learning_rate=args.lr,
         weight_decay=args.weight_decay,
+        # Direct model params
         landmark_weight=args.lm_weight,
         global_params_weight=args.gp_weight,
         local_params_weight=args.lp_weight,
+        wing_w=args.wing_w,
+        wing_epsilon=args.wing_epsilon,
         use_mixed_precision=use_mixed_precision,
         tensorboard_writer=writer,
+        # Heatmap model params
+        use_heatmap_model=use_heatmap_model,
+        heatmap_weight=args.heatmap_weight,
+        coord_weight=args.coord_weight,
+        consistency_weight=args.consistency_weight,
+        # Scheduler params
+        num_epochs=args.epochs,
+        warmup_epochs=args.warmup_epochs,
     )
 
     # Resume if specified
     if args.resume:
         trainer.load_checkpoint(args.resume)
 
-    # Train
+    # Train with stricter early stopping
     trainer.train(
         num_epochs=args.epochs,
         save_every=args.save_every,
         early_stopping_patience=args.patience,
+        early_stopping_min_delta=args.min_delta,
+        target_mae=args.target_mae,
     )
 
     # Export to ONNX and CoreML

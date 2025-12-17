@@ -213,10 +213,10 @@ class TrainingDataGenerator:
                 print(f"    [DEBUG] CalcParams error: {e}")
             return None
 
-        # Face alignment
+        # Face alignment - also get the warp matrix for landmark transformation
         try:
             tx, ty, rz = global_params[4], global_params[5], global_params[3]
-            aligned_face = self._face_aligner.align_face(
+            aligned_face, warp_matrix = self._face_aligner.align_face_with_matrix(
                 image=frame,
                 landmarks_68=landmarks,
                 pose_tx=tx,
@@ -261,11 +261,12 @@ class TrainingDataGenerator:
         return {
             'image': aligned_face_rgb,  # RGB format for NN training
             'hog_features': hog_features,
-            'landmarks': landmarks,
+            'landmarks': landmarks,  # Original frame coordinates
             'global_params': global_params,
             'local_params': local_params,
             'au_intensities': au_intensities,
             'bbox': bbox,
+            'warp_matrix': warp_matrix,  # Transform from original frame to aligned face
             'detection_confidence': detection_confidence,
             'convergence_success': convergence_success,
         }
@@ -359,6 +360,7 @@ class TrainingDataGenerator:
                     local_params=result['local_params'],
                     au_intensities=result['au_intensities'],
                     bbox=result['bbox'],
+                    warp_matrix=result['warp_matrix'],
                     video_name=video_path.name,
                     frame_index=frame_idx,
                     quality_score=quality_score
@@ -468,6 +470,7 @@ class TrainingDataGenerator:
                 local_params=result['local_params'],
                 au_intensities=result['au_intensities'],
                 bbox=result['bbox'],
+                warp_matrix=result['warp_matrix'],
                 video_name=video_path.name,
                 frame_index=frame_idx,
                 quality_score=quality_score

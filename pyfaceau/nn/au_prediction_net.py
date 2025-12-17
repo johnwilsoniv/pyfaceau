@@ -74,6 +74,172 @@ class SqueezeExcitation(nn.Module):
         return x * scale
 
 
+# =============================================================================
+# ENHANCED ATTENTION MODULES FOR MAX ACCURACY
+# =============================================================================
+
+class ChannelAttention(nn.Module):
+    """Channel attention module (part of CBAM)."""
+
+    def __init__(self, channels: int, reduction: int = 16):
+        super().__init__()
+        self.avg_pool = nn.AdaptiveAvgPool2d(1)
+        self.max_pool = nn.AdaptiveMaxPool2d(1)
+
+        reduced = max(1, channels // reduction)
+        self.fc = nn.Sequential(
+            nn.Conv2d(channels, reduced, 1, bias=False),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(reduced, channels, 1, bias=False),
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        avg_out = self.fc(self.avg_pool(x))
+        max_out = self.fc(self.max_pool(x))
+        attention = torch.sigmoid(avg_out + max_out)
+        return x * attention
+
+
+class SpatialAttention(nn.Module):
+    """Spatial attention module (part of CBAM)."""
+
+    def __init__(self, kernel_size: int = 7):
+        super().__init__()
+        padding = kernel_size // 2
+        self.conv = nn.Conv2d(2, 1, kernel_size, padding=padding, bias=False)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        avg_out = x.mean(dim=1, keepdim=True)
+        max_out = x.max(dim=1, keepdim=True)[0]
+        concat = torch.cat([avg_out, max_out], dim=1)
+        attention = torch.sigmoid(self.conv(concat))
+        return x * attention
+
+
+class CBAM(nn.Module):
+    """
+    Convolutional Block Attention Module.
+
+    Applies channel attention followed by spatial attention.
+    From: "CBAM: Convolutional Block Attention Module" (Woo et al., 2018)
+    """
+
+    def __init__(self, channels: int, reduction: int = 16, kernel_size: int = 7):
+        super().__init__()
+        self.channel_attention = ChannelAttention(channels, reduction)
+        self.spatial_attention = SpatialAttention(kernel_size)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = self.channel_attention(x)
+        x = self.spatial_attention(x)
+        return x
+
+
+class AUCorrelationTransformer(nn.Module):
+    """
+    Transformer to model AU correlations.
+
+    AUs are often correlated (e.g., AU6+AU12 = smile, AU1+AU4 = sadness).
+    This module learns these relationships.
+    """
+
+    def __init__(self, num_aus: int = 17, hidden_dim: int = 64, num_heads: int = 4, num_layers: int = 2):
+        super().__init__()
+        self.num_aus = num_aus
+        self.hidden_dim = hidden_dim
+
+        # Project each AU embedding to hidden dim
+        self.input_proj = nn.Linear(1, hidden_dim)
+
+        # Learnable AU position embeddings
+        self.au_embeddings = nn.Parameter(torch.randn(num_aus, hidden_dim) * 0.02)
+
+        # Transformer encoder
+        encoder_layer = nn.TransformerEncoderLayer(
+            d_model=hidden_dim,
+            nhead=num_heads,
+            dim_feedforward=hidden_dim * 4,
+            dropout=0.1,
+            activation='gelu',
+            batch_first=True,
+        )
+        self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
+
+        # Output projection
+        self.output_proj = nn.Linear(hidden_dim, 1)
+
+    def forward(self, au_features: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            au_features: (B, num_aus) initial AU predictions
+
+        Returns:
+            refined_aus: (B, num_aus) refined AU predictions
+        """
+        B = au_features.shape[0]
+
+        # Project each AU to hidden dim: (B, num_aus, 1) -> (B, num_aus, hidden_dim)
+        x = self.input_proj(au_features.unsqueeze(-1))
+
+        # Add AU position embeddings
+        x = x + self.au_embeddings.unsqueeze(0)
+
+        # Apply transformer
+        x = self.transformer(x)
+
+        # Project back to AU intensities
+        refined = self.output_proj(x).squeeze(-1)
+
+        # Residual connection
+        return au_features + refined
+
+
+class RegionAUHead(nn.Module):
+    """
+    Region-specific AU prediction head.
+
+    Uses spatial features from specific face regions for better accuracy.
+    """
+
+    def __init__(self, in_channels: int, au_indices: List[int], hidden_dim: int = 128):
+        super().__init__()
+        self.au_indices = au_indices
+        num_aus = len(au_indices)
+
+        # Spatial attention for this region
+        self.attention = nn.Sequential(
+            nn.Conv2d(in_channels, 64, 1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(64, 1, 1),
+            nn.Sigmoid(),
+        )
+
+        # AU prediction
+        self.fc = nn.Sequential(
+            nn.Linear(in_channels, hidden_dim),
+            nn.ReLU(inplace=True),
+            nn.Dropout(0.2),
+            nn.Linear(hidden_dim, num_aus),
+        )
+
+    def forward(self, features: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            features: (B, C, H, W) spatial features
+
+        Returns:
+            au_preds: (B, num_region_aus) predictions for this region's AUs
+        """
+        # Compute attention weights
+        attn = self.attention(features)  # (B, 1, H, W)
+
+        # Weighted average pooling
+        weighted = (features * attn).sum(dim=(2, 3)) / (attn.sum(dim=(2, 3)) + 1e-6)
+
+        # Predict AUs
+        return F.relu(self.fc(weighted))
+
+
 class MBConv(nn.Module):
     """Mobile Inverted Bottleneck Conv block (EfficientNet building block)."""
 
@@ -304,6 +470,153 @@ class AUPredictionNet(nn.Module):
         Returns:
             AU intensities clamped to [0, 5]
         """
+        with torch.no_grad():
+            out = self.forward(x)
+            return torch.clamp(out, 0, 5)
+
+
+class EnhancedAUPredictionNet(nn.Module):
+    """
+    Enhanced AU prediction network with attention mechanisms for maximum accuracy.
+
+    Improvements over basic AUPredictionNet:
+    1. CBAM attention after backbone (channel + spatial attention)
+    2. Region-specific prediction heads (upper face, mid face, lower face, eyes)
+    3. AU correlation transformer to model AU relationships
+    4. Multi-scale feature fusion
+
+    Target: r >= 0.99 correlation while maintaining 30+ FPS
+
+    Input: (batch, 3, 112, 112) RGB face image in [0, 1]
+    Output: (batch, 17) AU intensities in [0, 5]
+    """
+
+    def __init__(
+        self,
+        width_mult: float = 1.0,
+        dropout: float = 0.2,
+        use_correlation_transformer: bool = True,
+        transformer_layers: int = 2,
+    ):
+        super().__init__()
+
+        self.use_correlation_transformer = use_correlation_transformer
+
+        # Backbone (EfficientNet-lite)
+        self.backbone = EfficientNetLiteBackbone(width_mult=width_mult)
+
+        # We need spatial features, so modify backbone to not pool
+        # Get the channel count before final pooling
+        backbone_spatial_channels = int(320 * width_mult)  # Before head conv
+        backbone_final_channels = self.backbone.last_channel  # After head conv (1280)
+
+        # CBAM attention on spatial features
+        self.cbam = CBAM(backbone_final_channels, reduction=16, kernel_size=7)
+
+        # Global feature extraction (with attention)
+        self.global_pool = nn.AdaptiveAvgPool2d(1)
+
+        # Region-specific heads
+        # Each head learns to attend to its relevant face region
+        self.region_heads = nn.ModuleDict({
+            'upper_face': RegionAUHead(backbone_final_channels, AU_GROUPS['upper_face'], hidden_dim=128),
+            'mid_face': RegionAUHead(backbone_final_channels, AU_GROUPS['mid_face'], hidden_dim=96),
+            'lower_face': RegionAUHead(backbone_final_channels, AU_GROUPS['lower_face'], hidden_dim=128),
+            'eyes': RegionAUHead(backbone_final_channels, AU_GROUPS['eyes'], hidden_dim=64),
+        })
+
+        # Global AU head (for ensemble with region heads)
+        self.global_head = nn.Sequential(
+            nn.Linear(backbone_final_channels, 256),
+            nn.ReLU(inplace=True),
+            nn.Dropout(dropout),
+            nn.Linear(256, 128),
+            nn.ReLU(inplace=True),
+            nn.Dropout(dropout),
+            nn.Linear(128, NUM_AUS),
+        )
+
+        # Fusion weights (learnable combination of global and region predictions)
+        self.fusion_weight = nn.Parameter(torch.tensor(0.5))
+
+        # AU correlation transformer
+        if use_correlation_transformer:
+            self.au_transformer = AUCorrelationTransformer(
+                num_aus=NUM_AUS,
+                hidden_dim=64,
+                num_heads=4,
+                num_layers=transformer_layers,
+            )
+
+        # Store AU names
+        self.au_names = AU_NAMES
+
+        self._initialize_weights()
+
+    def _initialize_weights(self):
+        """Initialize new layers."""
+        for m in self.modules():
+            if isinstance(m, nn.Linear):
+                nn.init.xavier_uniform_(m.weight)
+                if m.bias is not None:
+                    nn.init.zeros_(m.bias)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Forward pass.
+
+        Args:
+            x: Input image tensor (batch, 3, 112, 112) in range [0, 1]
+
+        Returns:
+            AU intensities (batch, 17) in range [0, 5+]
+        """
+        B = x.shape[0]
+
+        # Get spatial features from backbone (before global pooling)
+        x = self.backbone.stem(x)
+        for block in self.backbone.blocks:
+            x = block(x)
+        x = self.backbone.head(x)  # (B, 1280, 4, 4) for 112x112 input
+
+        # Apply CBAM attention
+        x_attended = self.cbam(x)  # (B, 1280, 4, 4)
+
+        # Region-specific predictions
+        region_preds = {}
+        for region_name, head in self.region_heads.items():
+            region_preds[region_name] = head(x_attended)
+
+        # Assemble region predictions into full AU vector
+        region_aus = torch.zeros(B, NUM_AUS, device=x.device)
+        for region_name, indices in AU_GROUPS.items():
+            preds = region_preds[region_name]
+            for i, au_idx in enumerate(indices):
+                region_aus[:, au_idx] = preds[:, i]
+
+        # Global prediction
+        global_features = self.global_pool(x_attended).flatten(1)
+        global_aus = F.relu(self.global_head(global_features))
+
+        # Fuse global and region predictions
+        alpha = torch.sigmoid(self.fusion_weight)
+        fused_aus = alpha * global_aus + (1 - alpha) * region_aus
+
+        # Apply AU correlation transformer for refinement
+        if self.use_correlation_transformer:
+            refined_aus = self.au_transformer(fused_aus)
+        else:
+            refined_aus = fused_aus
+
+        return F.relu(refined_aus)
+
+    def forward_dict(self, x: torch.Tensor) -> Dict[str, torch.Tensor]:
+        """Forward pass with named outputs."""
+        intensities = self.forward(x)
+        return {name: intensities[:, i] for i, name in enumerate(self.au_names)}
+
+    def predict(self, x: torch.Tensor) -> torch.Tensor:
+        """Inference-time prediction with clamped output."""
         with torch.no_grad():
             out = self.forward(x)
             return torch.clamp(out, 0, 5)
