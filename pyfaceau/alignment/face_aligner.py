@@ -79,7 +79,8 @@ class OpenFace22FaceAligner:
 
     def align_face(self, image: np.ndarray, landmarks_68: np.ndarray,
                    pose_tx: float, pose_ty: float, p_rz: float = 0.0,
-                   apply_mask: bool = False, triangulation=None) -> np.ndarray:
+                   apply_mask: bool = False, triangulation=None,
+                   mask_style: str = 'detected') -> np.ndarray:
         """
         Align face to canonical 112×112 reference frame
 
@@ -91,6 +92,8 @@ class OpenFace22FaceAligner:
             p_rz: Pose rotation Z in radians (from OpenFace params_global[3])
             apply_mask: If True, mask out regions outside the face (like OpenFace C++)
             triangulation: TriangulationParser object (required if apply_mask=True)
+            mask_style: 'detected' uses warped detected landmarks (C++ OpenFace style),
+                       'reference' uses reference shape (legacy behavior)
 
         Returns:
             aligned_face: 112×112 aligned face image (BGR format)
@@ -128,16 +131,20 @@ class OpenFace22FaceAligner:
             if triangulation is None:
                 raise ValueError("triangulation required when apply_mask=True")
 
-            # Use reference shape for masking (centered in output image)
-            # This matches C++ OpenFace behavior which uses a consistent mask
-            # based on the mean face shape, not per-frame detected landmarks
-            center = np.array([self.output_width / 2, self.output_height / 2])
-            aligned_landmarks = self.reference_shape + center
-
-            # Apply correction shift to match C++ mask centering
-            # Empirically determined: C++ masks are shifted ~(5, 3) pixels from naive center
-            aligned_landmarks[:, 0] += 5.0
-            aligned_landmarks[:, 1] += 3.0
+            if mask_style == 'detected':
+                # C++ OpenFace style: transform detected landmarks by warp matrix
+                # This adapts the mask per-frame based on actual face shape
+                # Reference: Face_utils.cpp::AlignFaceMask() lines 186-209
+                warp_2d = scale_rot_matrix
+                translation = np.array([warp_matrix[0, 2], warp_matrix[1, 2]])
+                aligned_landmarks = landmarks_68 @ warp_2d.T + translation
+            else:
+                # Legacy style: use reference shape (consistent mask across frames)
+                center = np.array([self.output_width / 2, self.output_height / 2])
+                aligned_landmarks = self.reference_shape + center
+                # Apply correction shift for reference shape centering
+                aligned_landmarks[:, 0] += 5.0
+                aligned_landmarks[:, 1] += 3.0
 
             # Adjust eyebrow landmarks upward to include forehead (like C++)
             # Indices 17-26 are eyebrows, 0 and 16 are jaw corners
@@ -156,6 +163,80 @@ class OpenFace22FaceAligner:
             aligned_face = cv2.bitwise_and(aligned_face, aligned_face, mask=mask)
 
         return aligned_face
+
+    def align_face_with_matrix(self, image: np.ndarray, landmarks_68: np.ndarray,
+                                pose_tx: float, pose_ty: float, p_rz: float = 0.0,
+                                apply_mask: bool = False, triangulation=None,
+                                mask_style: str = 'detected') -> tuple:
+        """
+        Align face and return both the aligned image and the warp matrix.
+
+        This is the same as align_face() but also returns the 2x3 affine transform
+        matrix used for alignment, which can be used to transform landmarks from
+        original frame coordinates to aligned face coordinates.
+
+        Returns:
+            tuple: (aligned_face, warp_matrix)
+                - aligned_face: 112×112 aligned face image (BGR format)
+                - warp_matrix: (2, 3) affine transform matrix
+        """
+        # Ensure landmarks are (68, 2) shape
+        if landmarks_68.shape == (136,):
+            landmarks_68 = landmarks_68.reshape(68, 2)
+        elif landmarks_68.shape != (68, 2):
+            raise ValueError(f"landmarks_68 must be (68, 2) or (136,), got {landmarks_68.shape}")
+
+        # Extract rigid points from both source and destination
+        source_rigid = self._extract_rigid_points(landmarks_68)
+        dest_rigid = self._extract_rigid_points(self.reference_shape)
+
+        # Compute scale-rotation matrix using Kabsch algorithm
+        scale_rot_matrix = self._align_shapes_with_scale(source_rigid, dest_rigid)
+
+        # Build 2×3 affine warp matrix using pose translation
+        warp_matrix = self._build_warp_matrix(scale_rot_matrix, pose_tx, pose_ty)
+
+        # Apply affine transformation
+        aligned_face = cv2.warpAffine(
+            image,
+            warp_matrix,
+            (self.output_width, self.output_height),
+            flags=cv2.INTER_LINEAR
+        )
+
+        # Apply face mask if requested
+        if apply_mask:
+            if triangulation is None:
+                raise ValueError("triangulation required when apply_mask=True")
+
+            if mask_style == 'detected':
+                # C++ OpenFace style: transform detected landmarks by warp matrix
+                warp_2d = scale_rot_matrix
+                translation = np.array([warp_matrix[0, 2], warp_matrix[1, 2]])
+                aligned_landmarks = landmarks_68 @ warp_2d.T + translation
+            else:
+                # Legacy style: use reference shape
+                center = np.array([self.output_width / 2, self.output_height / 2])
+                aligned_landmarks = self.reference_shape + center
+                aligned_landmarks[:, 0] += 5.0
+                aligned_landmarks[:, 1] += 3.0
+
+            # Adjust eyebrow landmarks upward to include forehead
+            forehead_offset = (30 / 0.7) * self.sim_scale
+            for idx in [0, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26]:
+                aligned_landmarks[idx, 1] -= forehead_offset
+
+            # Create mask
+            mask = triangulation.create_face_mask(
+                aligned_landmarks,
+                self.output_width,
+                self.output_height
+            )
+
+            # Apply mask to each channel
+            aligned_face = cv2.bitwise_and(aligned_face, aligned_face, mask=mask)
+
+        return aligned_face, warp_matrix
 
     def _transform_landmarks(self, landmarks: np.ndarray, warp_matrix: np.ndarray) -> np.ndarray:
         """

@@ -26,6 +26,7 @@ from torch.utils.data import DataLoader, random_split
 
 from .au_prediction_net import (
     AUPredictionNet,
+    EnhancedAUPredictionNet,
     AUPredictionLoss,
     AU_NAMES,
     NUM_AUS,
@@ -36,7 +37,41 @@ from .au_prediction_net import (
 # Add parent path for data module
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from data.hdf5_dataset import PyTorchTrainingDataset
+from pyfaceau.data.hdf5_dataset import PyTorchTrainingDataset, create_video_stratified_split
+
+
+class WarmupCosineScheduler:
+    """Learning rate scheduler with linear warmup and cosine annealing."""
+
+    def __init__(self, optimizer, warmup_epochs: int, total_epochs: int, min_lr: float = 1e-6):
+        self.optimizer = optimizer
+        self.warmup_epochs = warmup_epochs
+        self.total_epochs = total_epochs
+        self.min_lr = min_lr
+        self.base_lrs = [group['lr'] for group in optimizer.param_groups]
+        self.current_epoch = 0
+
+    def step(self):
+        self.current_epoch += 1
+        if self.current_epoch <= self.warmup_epochs:
+            # Linear warmup
+            progress = self.current_epoch / self.warmup_epochs
+            for param_group, base_lr in zip(self.optimizer.param_groups, self.base_lrs):
+                param_group['lr'] = base_lr * progress
+        else:
+            # Cosine annealing
+            progress = (self.current_epoch - self.warmup_epochs) / (self.total_epochs - self.warmup_epochs)
+            for param_group, base_lr in zip(self.optimizer.param_groups, self.base_lrs):
+                param_group['lr'] = self.min_lr + (base_lr - self.min_lr) * 0.5 * (1 + np.cos(np.pi * progress))
+
+    def get_lr(self):
+        return [group['lr'] for group in self.optimizer.param_groups]
+
+    def state_dict(self):
+        return {'current_epoch': self.current_epoch}
+
+    def load_state_dict(self, state_dict):
+        self.current_epoch = state_dict['current_epoch']
 
 
 class AUTrainer:
@@ -57,6 +92,8 @@ class AUTrainer:
         weight_decay: float = 1e-4,
         smooth_l1_weight: float = 1.0,
         ccc_weight: float = 0.5,
+        num_epochs: int = 100,
+        warmup_epochs: int = 5,
     ):
         self.model = model.to(device)
         self.train_loader = train_loader
@@ -78,12 +115,12 @@ class AUTrainer:
             weight_decay=weight_decay,
         )
 
-        # Learning rate scheduler
-        self.scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
+        # Learning rate scheduler with warmup + cosine annealing
+        self.scheduler = WarmupCosineScheduler(
             self.optimizer,
-            T_0=10,
-            T_mult=2,
-            eta_min=1e-6,
+            warmup_epochs=warmup_epochs,
+            total_epochs=num_epochs,
+            min_lr=1e-6,
         )
 
         # Tracking
@@ -344,6 +381,8 @@ def create_data_loaders(
     val_split: float = 0.1,
     num_workers: int = 4,
     seed: int = 42,
+    augment: bool = True,
+    video_stratified: bool = True,
 ) -> Tuple[DataLoader, DataLoader]:
     """
     Create training and validation data loaders.
@@ -354,23 +393,46 @@ def create_data_loaders(
         val_split: Fraction of data for validation
         num_workers: Number of data loading workers
         seed: Random seed for split
+        augment: Whether to apply data augmentation to training data
+        video_stratified: Whether to split by video (prevents data leakage)
 
     Returns:
         Tuple of (train_loader, val_loader)
     """
-    full_dataset = PyTorchTrainingDataset(h5_path, load_images=True, load_hog=False)
-
-    total_size = len(full_dataset)
-    val_size = int(total_size * val_split)
-    train_size = total_size - val_size
-
-    generator = torch.Generator().manual_seed(seed)
-    train_dataset, val_dataset = random_split(
-        full_dataset,
-        [train_size, val_size],
-        generator=generator,
+    # Load dataset with augmentation enabled for training
+    full_dataset = PyTorchTrainingDataset(
+        h5_path,
+        load_images=True,
+        load_hog=False,
+        augment=augment,
+        augment_prob=0.5,
     )
 
+    # Split into train/val - preferring video-stratified split
+    if video_stratified and create_video_stratified_split is not None:
+        print("Using video-stratified train/val split (prevents data leakage)")
+        train_dataset, val_dataset = create_video_stratified_split(
+            full_dataset,
+            val_split=val_split,
+            seed=seed,
+        )
+    else:
+        # Fallback to random split
+        print("Using random train/val split (WARNING: may have data leakage)")
+        total_size = len(full_dataset)
+        val_size = int(total_size * val_split)
+        train_size = total_size - val_size
+
+        generator = torch.Generator().manual_seed(seed)
+        train_dataset, val_dataset = random_split(
+            full_dataset,
+            [train_size, val_size],
+            generator=generator,
+        )
+        print(f"Train/val split: {train_size}/{val_size} samples")
+
+    # Use 'spawn' multiprocessing context for HDF5 compatibility
+    mp_context = 'spawn' if num_workers > 0 else None
     train_loader = DataLoader(
         train_dataset,
         batch_size=batch_size,
@@ -378,6 +440,7 @@ def create_data_loaders(
         num_workers=num_workers,
         pin_memory=True,
         drop_last=True,
+        multiprocessing_context=mp_context,
     )
 
     val_loader = DataLoader(
@@ -386,19 +449,24 @@ def create_data_loaders(
         shuffle=False,
         num_workers=num_workers,
         pin_memory=True,
+        multiprocessing_context=mp_context,
     )
 
     return train_loader, val_loader
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Train AUPredictionNet')
+    parser = argparse.ArgumentParser(description='Train AU Prediction Network')
 
     # Data
     parser.add_argument('--data', type=str, required=True,
                         help='Path to HDF5 training data')
     parser.add_argument('--output', type=str, default='models/au_prediction',
                         help='Output directory for checkpoints')
+
+    # Model selection
+    parser.add_argument('--model', type=str, default='basic', choices=['basic', 'enhanced'],
+                        help='Model type: basic or enhanced (with attention)')
 
     # Training
     parser.add_argument('--epochs', type=int, default=100,
@@ -416,11 +484,13 @@ def main():
     parser.add_argument('--ccc-weight', type=float, default=0.5,
                         help='CCC loss weight')
 
-    # Model
+    # Model architecture
     parser.add_argument('--width-mult', type=float, default=1.0,
                         help='Backbone width multiplier')
-    parser.add_argument('--dropout', type=float, default=0.3,
+    parser.add_argument('--dropout', type=float, default=0.2,
                         help='Dropout rate')
+    parser.add_argument('--transformer-layers', type=int, default=2,
+                        help='Number of transformer layers (enhanced model only)')
 
     # Resume
     parser.add_argument('--resume', type=str, default=None,
@@ -438,6 +508,18 @@ def main():
     parser.add_argument('--patience', type=int, default=30,
                         help='Early stopping patience')
 
+    # Best practices options
+    parser.add_argument('--augment', action='store_true', default=True,
+                        help='Enable data augmentation (default: enabled)')
+    parser.add_argument('--no-augment', action='store_true',
+                        help='Disable data augmentation')
+    parser.add_argument('--video-stratified', action='store_true', default=True,
+                        help='Use video-stratified split (default: enabled)')
+    parser.add_argument('--no-video-stratified', action='store_true',
+                        help='Disable video-stratified split (use random)')
+    parser.add_argument('--warmup-epochs', type=int, default=5,
+                        help='Number of warmup epochs for LR scheduler')
+
     args = parser.parse_args()
 
     # Set random seeds
@@ -454,21 +536,41 @@ def main():
 
     print(f"Using device: {device}")
 
+    # Handle negation flags
+    use_augment = args.augment and not args.no_augment
+    use_video_stratified = args.video_stratified and not args.no_video_stratified
+
     # Create data loaders
     print(f"Loading data from: {args.data}")
+    print(f"Augmentation: {'enabled' if use_augment else 'disabled'}")
+    print(f"Video-stratified split: {'enabled' if use_video_stratified else 'disabled'}")
+    print(f"LR warmup: {args.warmup_epochs} epochs")
+
     train_loader, val_loader = create_data_loaders(
         args.data,
         batch_size=args.batch_size,
         val_split=args.val_split,
         num_workers=args.num_workers,
         seed=args.seed,
+        augment=use_augment,
+        video_stratified=use_video_stratified,
     )
 
     # Create model
-    model = AUPredictionNet(
-        width_mult=args.width_mult,
-        dropout=args.dropout,
-    )
+    if args.model == 'enhanced':
+        print("Using EnhancedAUPredictionNet (CBAM + region heads + AU transformer)")
+        model = EnhancedAUPredictionNet(
+            width_mult=args.width_mult,
+            dropout=args.dropout,
+            use_correlation_transformer=True,
+            transformer_layers=args.transformer_layers,
+        )
+    else:
+        print("Using AUPredictionNet (basic)")
+        model = AUPredictionNet(
+            width_mult=args.width_mult,
+            dropout=args.dropout,
+        )
     num_params = sum(p.numel() for p in model.parameters())
     print(f"Model parameters: {num_params:,}")
 
@@ -483,6 +585,8 @@ def main():
         weight_decay=args.weight_decay,
         smooth_l1_weight=args.l1_weight,
         ccc_weight=args.ccc_weight,
+        num_epochs=args.epochs,
+        warmup_epochs=args.warmup_epochs,
     )
 
     # Resume if specified

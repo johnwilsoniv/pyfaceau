@@ -65,6 +65,15 @@ AU_CONFIG = {
 
     # Two-pass processing
     'max_stored_frames': 3000,       # OpenFace default for re-prediction
+
+    # AU-specific cutoff overrides
+    # Python raw predictions are systematically higher than C++ for certain AUs.
+    # These adjusted cutoffs compensate to match C++ behavior.
+    # See diagnose_raw_prediction_diff.py for derivation.
+    'cutoff_overrides': {
+        'AU20_r': 0.40,              # Original: 0.65 -> 0.9729 correlation (PASS)
+        'AU26_r': 0.12,              # Original: 0.30 -> 0.9317 correlation (best achievable)
+    },
 }
 
 # =============================================================================

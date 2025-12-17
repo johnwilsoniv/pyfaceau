@@ -1080,6 +1080,11 @@ class FullPythonAUPipeline:
                 # See SVR_dynamic_lin_regressors.cpp for how cutoff is used
                 model_cutoff = model.get('cutoff', 0.0)
 
+                # Check for AU-specific cutoff overrides (for AUs with systematic bias)
+                cutoff_overrides = AU_CONFIG.get('cutoff_overrides', {})
+                if au_name in cutoff_overrides:
+                    model_cutoff = cutoff_overrides[au_name]
+
                 # Skip if no valid cutoff (shouldn't happen for dynamic models)
                 if model_cutoff <= 0 or model_cutoff >= 1.0:
                     continue
