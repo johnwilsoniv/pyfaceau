@@ -57,6 +57,14 @@ try:
 except ImportError:
     USING_BATCHED_PREDICTOR = False
 
+# Import NNCLNF (neural network replacement for CLNF)
+# Preferred over pyclnf when available for faster inference
+try:
+    from nnclnf import NNCLNF, NNCLNF_AVAILABLE
+except ImportError:
+    NNCLNF = None
+    NNCLNF_AVAILABLE = False
+
 # Import online AU correction (C++ CorrectOnlineAUs equivalent)
 from pyfaceau.prediction.online_au_correction import OnlineAUCorrection
 
@@ -191,6 +199,7 @@ class FullPythonAUPipeline:
         use_calc_params: bool = True,
         track_faces: bool = True,
         use_batched_predictor: bool = True,
+        use_nnclnf: str = 'auto',
         max_clnf_iterations: int = CLNF_CONFIG['max_iterations'],
         clnf_convergence_threshold: float = CLNF_CONFIG['convergence_threshold'],
         debug_mode: bool = False,
@@ -199,7 +208,7 @@ class FullPythonAUPipeline:
         """
         Initialize the full Python AU pipeline (OpenFace-compatible)
 
-        Architecture: PyMTCNN → CLNF → AU Prediction
+        Architecture: PyMTCNN → CLNF/NNCLNF → AU Prediction
         (matches OpenFace C++ 2.2 pipeline)
 
         Args:
@@ -211,6 +220,10 @@ class FullPythonAUPipeline:
             use_calc_params: DEPRECATED - pyclnf params are now used instead (default: True)
             track_faces: Use face tracking between frames (default: True)
             use_batched_predictor: Use optimized batched AU predictor (default: True)
+            use_nnclnf: Landmark detector to use:
+                - 'auto': Use NNCLNF if available, fall back to pyclnf (default)
+                - 'nnclnf': Force NNCLNF (raises error if unavailable)
+                - 'pyclnf': Force pyclnf CLNF (traditional iterative optimization)
             max_clnf_iterations: Maximum CLNF optimization iterations (default: 10)
             clnf_convergence_threshold: CLNF convergence threshold in pixels (default: 0.01)
             debug_mode: Enable debug mode for diagnostics (default: False)
@@ -236,6 +249,7 @@ class FullPythonAUPipeline:
             'au_models_dir': au_models_dir,
             'triangulation_file': triangulation_file,
             'patch_expert_file': patch_expert_file,
+            'use_nnclnf': use_nnclnf,
             'max_clnf_iterations': max_clnf_iterations,
             'clnf_convergence_threshold': clnf_convergence_threshold,
         }
@@ -317,26 +331,59 @@ class FullPythonAUPipeline:
                 print(f"  Active backend: {backend_info}")
                 print("Face detector loaded\n")
 
-            # Component 2: Landmark Detection (CLNF - OpenFace approach via pyclnf)
-            if self.verbose:
-                print("[2/8] Loading CLNF landmark detector (pyclnf)...")
-                print(f"  Max iterations: {max_clnf_iterations}")
-                print(f"  Convergence threshold: {clnf_convergence_threshold} pixels")
+            # Component 2: Landmark Detection (NNCLNF or pyclnf CLNF)
+            use_nnclnf = self._init_params.get('use_nnclnf', 'auto')
 
-            # Lazy import to avoid circular import (pyfaceau ↔ pyclnf)
-            from pyclnf import CLNF
+            # Determine which detector to use
+            use_nn = False
+            if use_nnclnf == 'nnclnf':
+                if not NNCLNF_AVAILABLE:
+                    raise ImportError(
+                        "NNCLNF requested but not available. "
+                        "Ensure model is trained and checkpoint exists at models/landmark_nn/checkpoint_best.pt"
+                    )
+                use_nn = True
+            elif use_nnclnf == 'auto':
+                use_nn = NNCLNF_AVAILABLE
+            # else: use_nnclnf == 'pyclnf', use_nn stays False
 
-            self.landmark_detector = CLNF(
-                # Use default model_dir - pyclnf finds its own models from PyPI installation
-                max_iterations=max_clnf_iterations,
-                convergence_threshold=clnf_convergence_threshold,
-                detector=CLNF_CONFIG['detector'],  # Disable built-in PyMTCNN (pyfaceau handles detection)
-                use_eye_refinement=CLNF_CONFIG['use_eye_refinement'],  # Enable hierarchical eye model refinement
-                convergence_profile=CLNF_CONFIG['convergence_profile'],  # Enable video mode with template tracking + scale adaptation
-                sigma=CLNF_CONFIG['sigma']  # KDE kernel sigma matching C++ CECLM
-            )
-            if self.verbose:
-                print(f"CLNF detector loaded\n")
+            if use_nn:
+                # Use neural network landmark detector (faster)
+                if self.verbose:
+                    print("[2/8] Loading NNCLNF landmark detector (neural network)...")
+                    print("  Using trained HeatmapLandmarkNet model")
+
+                self.landmark_detector = NNCLNF(
+                    max_iterations=max_clnf_iterations,
+                    convergence_threshold=clnf_convergence_threshold,
+                )
+                self._using_nnclnf = True
+
+                if self.verbose:
+                    print("NNCLNF detector loaded\n")
+            else:
+                # Use traditional pyclnf CLNF (slower but more accurate)
+                if self.verbose:
+                    print("[2/8] Loading CLNF landmark detector (pyclnf)...")
+                    print(f"  Max iterations: {max_clnf_iterations}")
+                    print(f"  Convergence threshold: {clnf_convergence_threshold} pixels")
+
+                # Lazy import to avoid circular import (pyfaceau ↔ pyclnf)
+                from pyclnf import CLNF
+
+                self.landmark_detector = CLNF(
+                    # Use default model_dir - pyclnf finds its own models from PyPI installation
+                    max_iterations=max_clnf_iterations,
+                    convergence_threshold=clnf_convergence_threshold,
+                    detector=CLNF_CONFIG['detector'],  # Disable built-in PyMTCNN (pyfaceau handles detection)
+                    use_eye_refinement=CLNF_CONFIG['use_eye_refinement'],  # Enable hierarchical eye model refinement
+                    convergence_profile=CLNF_CONFIG['convergence_profile'],  # Enable video mode with template tracking + scale adaptation
+                    sigma=CLNF_CONFIG['sigma']  # KDE kernel sigma matching C++ CECLM
+                )
+                self._using_nnclnf = False
+
+                if self.verbose:
+                    print(f"CLNF detector loaded\n")
 
             # Component 3: PDM Parser (moved before CLNF to support PDM enforcement)
             if self.verbose:
@@ -428,6 +475,18 @@ class FullPythonAUPipeline:
                 print("")
 
             self._components_initialized = True
+
+    @property
+    def using_nnclnf(self) -> bool:
+        """Check if NNCLNF (neural network) landmark detector is being used."""
+        return getattr(self, '_using_nnclnf', False)
+
+    @property
+    def landmark_detector_name(self) -> str:
+        """Get the name of the landmark detector being used."""
+        if not self._components_initialized:
+            return "not initialized"
+        return "NNCLNF" if self._using_nnclnf else "pyclnf"
 
     def _initialize_landmarks_from_bbox(self, bbox):
         """

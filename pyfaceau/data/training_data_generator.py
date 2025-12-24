@@ -130,6 +130,72 @@ class TrainingDataGenerator:
         # pyfhog 0.1.4+ outputs in OpenFace-compatible format (4464,)
         return hog.astype(np.float32)
 
+    def _crop_and_align_bbox(
+        self,
+        image: np.ndarray,
+        bbox: np.ndarray
+    ) -> tuple:
+        """
+        Crop face from image using bbox (matching NNCLNF inference alignment).
+
+        This creates the SAME alignment that NNCLNF uses at inference time,
+        ensuring training and inference see the same type of crops.
+
+        Args:
+            image: BGR image
+            bbox: Face bounding box [x, y, width, height]
+
+        Returns:
+            aligned_face: 112x112 BGR face image
+            warp_matrix: 2x3 affine transform matrix (for landmark transformation)
+        """
+        bbox_x, bbox_y, bbox_w, bbox_h = bbox
+
+        # Apply PyMTCNN bbox correction (matching NNCLNF)
+        bbox_x = bbox_x + bbox_w * 0.0625
+        bbox_y = bbox_y + bbox_h * 0.0625
+        bbox_w = bbox_w * 0.875
+        bbox_h = bbox_h * 0.875
+
+        size = max(bbox_w, bbox_h)
+        center_x = bbox_x + bbox_w / 2
+        center_y = bbox_y + bbox_h / 2
+
+        # Y offset correction (matching NNCLNF inference)
+        center_y -= size * 0.12
+
+        # Add padding (10% on each side)
+        padding = 0.1
+        size_with_pad = size * (1 + 2 * padding)
+
+        x1 = center_x - size_with_pad / 2
+        y1 = center_y - size_with_pad / 2
+        x2 = center_x + size_with_pad / 2
+        y2 = center_y + size_with_pad / 2
+
+        src_pts = np.array([
+            [x1, y1],
+            [x2, y1],
+            [x2, y2],
+        ], dtype=np.float32)
+
+        dst_pts = np.array([
+            [0, 0],
+            [112, 0],
+            [112, 112],
+        ], dtype=np.float32)
+
+        M = cv2.getAffineTransform(src_pts, dst_pts)
+
+        aligned_face = cv2.warpAffine(
+            image, M, (112, 112),
+            flags=cv2.INTER_LINEAR,
+            borderMode=cv2.BORDER_CONSTANT,
+            borderValue=(0, 0, 0)
+        )
+
+        return aligned_face, M
+
     def _predict_aus(self, hog_features: np.ndarray, geom_features: np.ndarray) -> np.ndarray:
         """Predict AU intensities from features."""
         full_vector = np.concatenate([hog_features, geom_features])
@@ -213,18 +279,10 @@ class TrainingDataGenerator:
                 print(f"    [DEBUG] CalcParams error: {e}")
             return None
 
-        # Face alignment - also get the warp matrix for landmark transformation
+        # Face alignment - use bbox-based alignment (matching NNCLNF inference)
+        # This ensures training and inference use the SAME alignment approach
         try:
-            tx, ty, rz = global_params[4], global_params[5], global_params[3]
-            aligned_face, warp_matrix = self._face_aligner.align_face_with_matrix(
-                image=frame,
-                landmarks_68=landmarks,
-                pose_tx=tx,
-                pose_ty=ty,
-                p_rz=rz,
-                apply_mask=True,
-                triangulation=self._triangulation
-            )
+            aligned_face, warp_matrix = self._crop_and_align_bbox(frame, bbox)
         except Exception as e:
             if self.config.verbose:
                 print(f"    [DEBUG] Face alignment error: {e}")
