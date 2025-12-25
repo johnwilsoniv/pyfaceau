@@ -302,7 +302,8 @@ class OpenFace22AUPredictor:
             geom_feat = self._extract_geometric_features(csv_data.iloc[i])
 
             # Update tracker (every 2nd frame)
-            update_histogram = (i % 2 == 1)
+            # C++ increments frames_tracking BEFORE check, update on even frames
+            update_histogram = (i % 2 == 0)
             median_tracker.update(hog_feat, geom_feat, update_histogram=update_histogram)
 
             # Store running median

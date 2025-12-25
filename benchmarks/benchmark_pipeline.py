@@ -137,7 +137,8 @@ class DetailedBenchmark:
 
             # ===== STEP 7: Running Median Update =====
             t0 = time.perf_counter()
-            update_histogram = (frame_idx % 2 == 1)
+            # C++ increments frames_tracking BEFORE check, update on even frames
+            update_histogram = (frame_idx % 2 == 0)
             self.pipeline.running_median.update(hog_features, geom_features, update_histogram=update_histogram)
             running_median = self.pipeline.running_median.get_combined_median()
             component_times['running_median'] = (time.perf_counter() - t0) * 1000

@@ -16,9 +16,12 @@ CLNF_CONFIG = {
     'max_iterations': 10,
     'convergence_threshold': 0.005,  # Gold standard (stricter than 0.01)
     'sigma': 2.25,                   # C++ CECLM default (1.5 × 1.5 scale factor)
-    'use_eye_refinement': True,      # Enable hierarchical eye model refinement
+    'use_eye_refinement': True,      # Enabled: fixed transpose bug, now improves accuracy
     'convergence_profile': 'video',  # Enable template tracking + scale adaptation
     'detector': False,               # Disable built-in detector (pyfaceau handles)
+    'use_gpu': True,                 # Enable GPU acceleration (10-20x speedup)
+    'gpu_device': 'auto',            # GPU device: 'auto', 'mps', 'cuda', 'cpu'
+    'use_validator': False,          # Disable detection validator (68% of CLNF time)
 }
 
 # =============================================================================
@@ -67,11 +70,9 @@ AU_CONFIG = {
     'max_stored_frames': 3000,       # OpenFace default for re-prediction
 
     # AU-specific cutoff overrides
-    # Python raw predictions are systematically higher than C++ for certain AUs.
-    # These adjusted cutoffs compensate to match C++ behavior.
-    # See diagnose_raw_prediction_diff.py for derivation.
+    # NOTE: With the fix to include zeros in cutoff calculation (matching C++),
+    # most overrides are no longer needed. Only keep AU26_r which has unusual behavior.
     'cutoff_overrides': {
-        'AU20_r': 0.40,              # Original: 0.65 -> 0.9729 correlation (PASS)
         'AU26_r': 0.12,              # Original: 0.30 -> 0.9317 correlation (best achievable)
     },
 }
