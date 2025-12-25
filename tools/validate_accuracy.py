@@ -134,8 +134,8 @@ def generate_python_outputs(video_path, cpp_df, max_frames=None):
             geom_features = pipeline.pdm_parser.extract_geometric_features(params_local)
             geom_features = geom_features.astype(np.float32)
 
-            # Running median (update every other frame like benchmark)
-            update_histogram = (frame_idx % 2 == 1)
+            # Running median - C++ increments frames_tracking BEFORE check, update on even frames
+            update_histogram = (frame_idx % 2 == 0)
             pipeline.running_median.update(hog_features, geom_features, update_histogram=update_histogram)
             running_median = pipeline.running_median.get_combined_median()
 

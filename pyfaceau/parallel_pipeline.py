@@ -217,7 +217,8 @@ class ParallelAUPipeline:
                         geom_features = frame_features['geom_features']
 
                         # Update running median (must be sequential)
-                        update_histogram = (idx % 2 == 1)
+                        # C++ increments frames_tracking BEFORE check, update on even frames
+                        update_histogram = (idx % 2 == 0)
                         self.main_pipeline.running_median.update(
                             hog_features,
                             geom_features,
