@@ -14,6 +14,14 @@ from typing import Optional, Callable
 from .pipeline import FullPythonAUPipeline
 
 
+def safe_print(*args, **kwargs):
+    """Print wrapper that handles BrokenPipeError in GUI subprocess contexts."""
+    try:
+        print(*args, **kwargs)
+    except (BrokenPipeError, IOError):
+        pass  # Stdout disconnected (e.g., GUI subprocess terminated)
+
+
 class OpenFaceProcessor:
     """
     OpenFace 2.2-compatible AU extraction processor.
@@ -74,7 +82,7 @@ class OpenFaceProcessor:
             weights_dir = Path(weights_dir)
 
         if self.verbose:
-            print("Initializing PyFaceAU (OpenFace 2.2 Python replacement)...")
+            safe_print("Initializing PyFaceAU (OpenFace 2.2 Python replacement)...")
 
         # Initialize the PyFaceAU pipeline (OpenFace-compatible: PyMTCNN → CLNF → AU)
         self.pipeline = FullPythonAUPipeline(
@@ -88,10 +96,10 @@ class OpenFaceProcessor:
         )
 
         if self.verbose:
-            print(f"  PyFaceAU initialized")
-            print(f"  CLNF refinement: {'Enabled' if use_clnf_refinement else 'Disabled'}")
-            print(f"  Expected accuracy: r > 0.92 (OpenFace 2.2 correlation)")
-            print()
+            safe_print(f"  PyFaceAU initialized")
+            safe_print(f"  CLNF refinement: {'Enabled' if use_clnf_refinement else 'Disabled'}")
+            safe_print(f"  Expected accuracy: r > 0.92 (OpenFace 2.2 correlation)")
+            safe_print()
 
     def process_video(
         self,
@@ -118,7 +126,7 @@ class OpenFaceProcessor:
         output_csv_path = Path(output_csv_path)
 
         if self.verbose:
-            print(f"Processing: {video_path.name}")
+            safe_print(f"Processing: {video_path.name}")
 
         # Ensure output directory exists
         output_csv_path.parent.mkdir(parents=True, exist_ok=True)
@@ -136,17 +144,17 @@ class OpenFaceProcessor:
 
             if self.verbose:
                 total_frames = len(df)
-                print(f"  Processed {success_count}/{total_frames} frames successfully")
+                safe_print(f"  Processed {success_count}/{total_frames} frames successfully")
                 if success_count < total_frames:
                     failed = total_frames - success_count
-                    print(f"  {failed} frames failed (no face detected)")
-                print(f"  Output: {output_csv_path}")
+                    safe_print(f"  {failed} frames failed (no face detected)")
+                safe_print(f"  Output: {output_csv_path}")
 
             return int(success_count)
 
         except Exception as e:
             if self.verbose:
-                print(f"  Error processing video: {e}")
+                safe_print(f"  Error processing video: {e}")
             raise
 
     def clear_cache(self):
@@ -205,14 +213,14 @@ def process_videos(
             output_dir='/path/to/output',
             use_clnf_refinement=True
         )
-        print(f"Processed {count} videos")
+        safe_print(f"Processed {count} videos")
         ```
     """
     directory_path = Path(directory_path)
 
     # Check if directory exists
     if not directory_path.is_dir():
-        print(f"Error: Directory '{directory_path}' does not exist.")
+        safe_print(f"Error: Directory '{directory_path}' does not exist.")
         return 0
 
     # Determine output directory
@@ -224,7 +232,7 @@ def process_videos(
         output_dir = Path(output_dir)
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    print(f"Output directory: {output_dir}")
+    safe_print(f"Output directory: {output_dir}")
 
     # Initialize processor
     processor = OpenFaceProcessor(**processor_kwargs)
@@ -238,24 +246,24 @@ def process_videos(
     if specific_files:
         # Process only the specific files
         files_to_process = [Path(f) for f in specific_files]
-        print(f"Processing {len(files_to_process)} specific files from current session.")
+        safe_print(f"Processing {len(files_to_process)} specific files from current session.")
     else:
         # Process all eligible files in the directory
         files_to_process = list(directory_path.iterdir())
-        print(f"Processing all eligible files in {directory_path}")
+        safe_print(f"Processing all eligible files in {directory_path}")
 
     # Process each file
     for file_path in files_to_process:
         # Skip if not a file or doesn't exist
         if not file_path.is_file():
-            print(f"Warning: {file_path} does not exist or is not a file. Skipping.")
+            safe_print(f"Warning: {file_path} does not exist or is not a file. Skipping.")
             continue
 
         filename = file_path.name
 
         # Skip files with 'debug' in the filename
         if 'debug' in filename:
-            print(f"Skipping debug file: {filename}")
+            safe_print(f"Skipping debug file: {filename}")
             continue
 
         # Process file with 'mirrored' in the filename
@@ -271,13 +279,13 @@ def process_videos(
 
                 if frame_count > 0:
                     processed_count += 1
-                    print(f"Successfully processed: {filename}\n")
+                    safe_print(f"Successfully processed: {filename}\n")
                 else:
-                    print(f"Failed to process: {filename}\n")
+                    safe_print(f"Failed to process: {filename}\n")
 
             except Exception as e:
-                print(f"Error processing {filename}: {e}\n")
+                safe_print(f"Error processing {filename}: {e}\n")
 
-    print(f"\nProcessing complete. {processed_count} files were processed.")
+    safe_print(f"\nProcessing complete. {processed_count} files were processed.")
 
     return processed_count
