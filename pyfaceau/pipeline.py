@@ -22,7 +22,7 @@ import numpy as np
 import pandas as pd
 import cv2
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 import argparse
 import sys
 import time
@@ -524,7 +524,8 @@ class FullPythonAUPipeline:
         self,
         video_path: str,
         output_csv: Optional[str] = None,
-        max_frames: Optional[int] = None
+        max_frames: Optional[int] = None,
+        progress_callback: Optional[Callable[[int, int, float], None]] = None
     ) -> pd.DataFrame:
         """
         Process a video and extract AUs for all frames
@@ -533,6 +534,8 @@ class FullPythonAUPipeline:
             video_path: Path to input video
             output_csv: Optional path to save CSV results
             max_frames: Optional limit on frames to process (for testing)
+            progress_callback: Optional callback function(current, total, fps)
+                             for progress updates to GUI
 
         Returns:
             DataFrame with columns: frame, timestamp, success, AU01_r, AU02_r, ...
@@ -541,14 +544,15 @@ class FullPythonAUPipeline:
         self.stored_features = []
 
         # Use direct processing implementation
-        return self._process_video_impl(video_path, output_csv, max_frames)
+        return self._process_video_impl(video_path, output_csv, max_frames, progress_callback)
 
 
     def _process_video_impl(
         self,
         video_path: str,
         output_csv: Optional[str] = None,
-        max_frames: Optional[int] = None
+        max_frames: Optional[int] = None,
+        progress_callback: Optional[Callable[[int, int, float], None]] = None
     ) -> pd.DataFrame:
         """Internal implementation of video processing"""
 
@@ -620,6 +624,13 @@ class FullPythonAUPipeline:
                     progress = (frame_idx + 1) / total_frames * 100
                     print(f"Progress: {frame_idx + 1}/{total_frames} frames ({progress:.1f}%) - "
                           f"Success: {total_processed}, Failed: {total_failed}", flush=True)
+
+                # GUI progress callback (called every frame for smooth updates)
+                if progress_callback is not None:
+                    try:
+                        progress_callback(frame_idx + 1, total_frames, fps)
+                    except Exception:
+                        pass  # Don't let callback errors stop processing
 
                 frame_idx += 1
 

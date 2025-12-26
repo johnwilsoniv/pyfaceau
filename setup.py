@@ -11,7 +11,7 @@ long_description = (this_directory / "README.md").read_text()
 
 setup(
     name="pyfaceau",
-    version="1.3.5",
+    version="1.3.6",
     author="John Wilson",
     author_email="",  # Add email if desired
     description="Pure Python OpenFace 2.2 AU extraction with PyMTCNN face detection and CLNF refinement",
