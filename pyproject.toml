@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pyfaceau"
-version = "1.3.4"
+version = "1.3.5"
 description = "Pure Python OpenFace 2.2 AU extraction with CLNF landmark refinement"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -67,4 +67,11 @@ include = ["pyfaceau*"]
 exclude = ["tests*", "tools*", "benchmarks*"]
 
 [tool.setuptools.package-data]
-pyfaceau = ["*.txt", "*.json", "utils/cython_extensions/*.pyx", "utils/cython_extensions/*.pxd"]
+pyfaceau = [
+    "*.txt",
+    "*.json",
+    "*.so",  # Pre-compiled Cython extensions (240x speedup)
+    "cython_*.so",
+    "utils/cython_extensions/*.pyx",
+    "utils/cython_extensions/*.pxd",
+]
