@@ -619,11 +619,14 @@ class FullPythonAUPipeline:
                 else:
                     total_failed += 1
 
-                # Progress update
+                # Progress update (wrapped to handle BrokenPipeError in GUI contexts)
                 if self.verbose and (frame_idx + 1) % 10 == 0:
                     progress = (frame_idx + 1) / total_frames * 100
-                    print(f"Progress: {frame_idx + 1}/{total_frames} frames ({progress:.1f}%) - "
-                          f"Success: {total_processed}, Failed: {total_failed}", flush=True)
+                    try:
+                        print(f"Progress: {frame_idx + 1}/{total_frames} frames ({progress:.1f}%) - "
+                              f"Success: {total_processed}, Failed: {total_failed}", flush=True)
+                    except (BrokenPipeError, IOError):
+                        pass  # Stdout disconnected (e.g., GUI subprocess)
 
                 # GUI progress callback (called every frame for smooth updates)
                 if progress_callback is not None:
