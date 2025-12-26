@@ -7,14 +7,17 @@ include requirements.txt
 # Include Cython source files for building extensions
 recursive-include pyfaceau/utils/cython_extensions *.pyx *.pxd *.c
 
+# Include pre-compiled Cython extensions (platform-specific)
+# These provide 240x speedup for running median calculation
+include pyfaceau/*.so
+include pyfaceau/cython_*.so
+
 # Include package data files
 recursive-include pyfaceau *.txt *.json
 
-# Exclude compiled files and caches
+# Exclude compiled files and caches (except our Cython extensions)
 global-exclude *.pyc
 global-exclude *.pyo
-global-exclude *.so
-global-exclude *.dylib
 global-exclude __pycache__
 global-exclude .DS_Store
 
