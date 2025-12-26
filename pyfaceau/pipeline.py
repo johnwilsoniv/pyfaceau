@@ -75,9 +75,17 @@ except ImportError:
         sys.path.insert(0, str(pyfhog_src_path))
         import pyfhog
     else:
-        print("Error: pyfhog not found. Please install it:")
-        print("   cd ../pyfhog && pip install -e .")
+        safe_print("Error: pyfhog not found. Please install it:")
+        safe_print("   cd ../pyfhog && pip install -e .")
         sys.exit(1)
+
+
+def safe_print(*args, **kwargs):
+    """Print wrapper that handles BrokenPipeError in GUI subprocess contexts."""
+    try:
+        print(*args, **kwargs)
+    except (BrokenPipeError, IOError):
+        pass  # Stdout disconnected (e.g., GUI subprocess terminated)
 
 
 def get_video_rotation(video_path: str) -> int:
@@ -284,11 +292,11 @@ class FullPythonAUPipeline:
             if self.verbose:
                 thread_name = threading.current_thread().name
                 is_main = threading.current_thread() == threading.main_thread()
-                print("=" * 80)
-                print("INITIALIZING COMPONENTS")
-                print(f"Thread: {thread_name} (main={is_main})")
-                print("=" * 80)
-                print("")
+                safe_print("=" * 80)
+                safe_print("INITIALIZING COMPONENTS")
+                safe_print(f"Thread: {thread_name} (main={is_main})")
+                safe_print("=" * 80)
+                safe_print("")
 
             # Get initialization parameters
             mtcnn_backend = self._init_params['mtcnn_backend']
@@ -301,8 +309,8 @@ class FullPythonAUPipeline:
 
             # Component 1: Face Detection (PyMTCNN with multi-backend support)
             if self.verbose:
-                print("[1/8] Loading face detector (PyMTCNN)...")
-                print(f"  Backend: {mtcnn_backend}")
+                safe_print("[1/8] Loading face detector (PyMTCNN)...")
+                safe_print(f"  Backend: {mtcnn_backend}")
 
             if not PYMTCNN_AVAILABLE:
                 raise ImportError(
@@ -320,15 +328,15 @@ class FullPythonAUPipeline:
             )
             if self.verbose:
                 backend_info = self.face_detector.get_backend_info()
-                print(f"  Active backend: {backend_info}")
-                print("Face detector loaded\n")
+                safe_print(f"  Active backend: {backend_info}")
+                safe_print("Face detector loaded\n")
 
             # Component 2: Landmark Detection (pyclnf CLNF with GPU acceleration)
             if self.verbose:
-                print("[2/8] Loading CLNF landmark detector (pyclnf)...")
-                print(f"  Max iterations: {max_clnf_iterations}")
-                print(f"  Convergence threshold: {clnf_convergence_threshold} pixels")
-                print(f"  GPU enabled: {CLNF_CONFIG.get('use_gpu', False)}")
+                safe_print("[2/8] Loading CLNF landmark detector (pyclnf)...")
+                safe_print(f"  Max iterations: {max_clnf_iterations}")
+                safe_print(f"  Convergence threshold: {clnf_convergence_threshold} pixels")
+                safe_print(f"  GPU enabled: {CLNF_CONFIG.get('use_gpu', False)}")
 
             # Lazy import to avoid circular import (pyfaceau ↔ pyclnf)
             from pyclnf import CLNF
@@ -347,14 +355,14 @@ class FullPythonAUPipeline:
             )
 
             if self.verbose:
-                print(f"CLNF detector loaded\n")
+                safe_print(f"CLNF detector loaded\n")
 
             # Component 3: PDM Parser (moved before CLNF to support PDM enforcement)
             if self.verbose:
-                print("[3/8] Loading PDM shape model...")
+                safe_print("[3/8] Loading PDM shape model...")
             self.pdm_parser = PDMParser(pdm_file)
             if self.verbose:
-                print(f"PDM loaded: {self.pdm_parser.mean_shape.shape[0]//3} landmarks\n")
+                safe_print(f"PDM loaded: {self.pdm_parser.mean_shape.shape[0]//3} landmarks\n")
 
             # Note: CalcParams is no longer used for geometric features
             # pyclnf's optimized params are used instead (see GEOMETRIC_FEATURES_BUG.md)
@@ -363,28 +371,28 @@ class FullPythonAUPipeline:
 
             # Component 4: Face Aligner
             if self.verbose:
-                print("[4/8] Initializing face aligner...")
+                safe_print("[4/8] Initializing face aligner...")
             self.face_aligner = OpenFace22FaceAligner(
                 pdm_file=pdm_file,
                 sim_scale=0.7,
                 output_size=(112, 112)
             )
             if self.verbose:
-                print("Face aligner initialized\n")
+                safe_print("Face aligner initialized\n")
 
             # Note: CLNF landmark detector is already initialized above (Component 2)
             # No separate refiner needed - CLNF does full detection from PDM mean shape
 
             # Component 5: Triangulation
             if self.verbose:
-                print("[5/8] Loading triangulation...")
+                safe_print("[5/8] Loading triangulation...")
             self.triangulation = TriangulationParser(triangulation_file)
             if self.verbose:
-                print(f"Triangulation loaded: {len(self.triangulation.triangles)} triangles\n")
+                safe_print(f"Triangulation loaded: {len(self.triangulation.triangles)} triangles\n")
 
             # Component 6: AU Models
             if self.verbose:
-                print("[6/8] Loading AU SVR models...")
+                safe_print("[6/8] Loading AU SVR models...")
             model_parser = OF22ModelParser(au_models_dir)
             self.au_models = model_parser.load_all_models(
                 use_recommended=True,
@@ -392,30 +400,30 @@ class FullPythonAUPipeline:
                 verbose=self.verbose
             )
             if self.verbose:
-                print(f"Loaded {len(self.au_models)} AU models")
+                safe_print(f"Loaded {len(self.au_models)} AU models")
 
             # Initialize batched predictor if enabled
             if self.use_batched_predictor:
                 self.batched_au_predictor = BatchedAUPredictor(self.au_models)
                 if self.verbose:
-                    print(f"Batched AU predictor enabled (2-5x faster)")
+                    safe_print(f"Batched AU predictor enabled (2-5x faster)")
             if self.verbose:
-                print("")
+                safe_print("")
 
             # Component 7: Running Median Tracker
             if self.verbose:
-                print("[7/8] Initializing running median tracker...")
+                safe_print("[7/8] Initializing running median tracker...")
             # Use locked configuration from config.py (matches C++ OpenFace)
             self.running_median = DualHistogramMedianTracker(**RUNNING_MEDIAN_CONFIG)
             if self.verbose:
                 if USING_CYTHON:
-                    print("Running median tracker initialized (Cython-optimized, 260x faster)\n")
+                    safe_print("Running median tracker initialized (Cython-optimized, 260x faster)\n")
                 else:
-                    print("Running median tracker initialized (Python version)\n")
+                    safe_print("Running median tracker initialized (Python version)\n")
 
             # Component 8: Online AU Correction (C++ CorrectOnlineAUs equivalent)
             if self.verbose:
-                print("[8/9] Initializing online AU correction...")
+                safe_print("[8/9] Initializing online AU correction...")
             # Get AU names from loaded models
             au_names = list(self.au_models.keys())
             self.online_au_correction = OnlineAUCorrection(
@@ -428,15 +436,15 @@ class FullPythonAUPipeline:
                 clip_values=True
             )
             if self.verbose:
-                print(f"Online AU correction initialized for {len(au_names)} AUs\n")
+                safe_print(f"Online AU correction initialized for {len(au_names)} AUs\n")
 
             # Component 9: PyFHOG
             if self.verbose:
-                print("[9/9] PyFHOG ready for HOG extraction")
-                print("")
-                print("All components initialized successfully")
-                print("=" * 80)
-                print("")
+                safe_print("[9/9] PyFHOG ready for HOG extraction")
+                safe_print("")
+                safe_print("All components initialized successfully")
+                safe_print("=" * 80)
+                safe_print("")
 
             self._components_initialized = True
 
@@ -564,14 +572,14 @@ class FullPythonAUPipeline:
             raise FileNotFoundError(f"Video not found: {video_path}")
 
         if self.verbose:
-            print(f"Processing video: {video_path.name}")
-            print("=" * 80)
-            print("")
+            safe_print(f"Processing video: {video_path.name}")
+            safe_print("=" * 80)
+            safe_print("")
 
         # Detect video rotation from metadata (important for mobile videos)
         rotation = get_video_rotation(str(video_path))
         if self.verbose and rotation != 0:
-            print(f"Detected video rotation: {rotation}°")
+            safe_print(f"Detected video rotation: {rotation}°")
 
         # Open video
         cap = cv2.VideoCapture(str(video_path))
@@ -582,13 +590,13 @@ class FullPythonAUPipeline:
             total_frames = min(total_frames, max_frames)
 
         if self.verbose:
-            print(f"Video info:")
-            print(f"  FPS: {fps:.2f}")
-            print(f"  Total frames: {total_frames}")
-            print(f"  Duration: {total_frames/fps:.2f} seconds")
+            safe_print(f"Video info:")
+            safe_print(f"  FPS: {fps:.2f}")
+            safe_print(f"  Total frames: {total_frames}")
+            safe_print(f"  Duration: {total_frames/fps:.2f} seconds")
             if rotation != 0:
-                print(f"  Rotation: {rotation}° (will be corrected)")
-            print("")
+                safe_print(f"  Rotation: {rotation}° (will be corrected)")
+            safe_print("")
 
         # Results storage
         results = []
@@ -597,6 +605,7 @@ class FullPythonAUPipeline:
         # Statistics
         total_processed = 0
         total_failed = 0
+        processing_start_time = time.time()
 
         try:
             while True:
@@ -619,19 +628,19 @@ class FullPythonAUPipeline:
                 else:
                     total_failed += 1
 
-                # Progress update (wrapped to handle BrokenPipeError in GUI contexts)
+                # Progress update
                 if self.verbose and (frame_idx + 1) % 10 == 0:
                     progress = (frame_idx + 1) / total_frames * 100
-                    try:
-                        print(f"Progress: {frame_idx + 1}/{total_frames} frames ({progress:.1f}%) - "
-                              f"Success: {total_processed}, Failed: {total_failed}", flush=True)
-                    except (BrokenPipeError, IOError):
-                        pass  # Stdout disconnected (e.g., GUI subprocess)
+                    safe_print(f"Progress: {frame_idx + 1}/{total_frames} frames ({progress:.1f}%) - "
+                          f"Success: {total_processed}, Failed: {total_failed}", flush=True)
 
                 # GUI progress callback (called every frame for smooth updates)
                 if progress_callback is not None:
                     try:
-                        progress_callback(frame_idx + 1, total_frames, fps)
+                        # Calculate actual processing FPS (not video fps)
+                        elapsed = time.time() - processing_start_time
+                        actual_fps = (frame_idx + 1) / elapsed if elapsed > 0 else 0.0
+                        progress_callback(frame_idx + 1, total_frames, actual_fps)
                     except Exception:
                         pass  # Don't let callback errors stop processing
 
@@ -646,25 +655,25 @@ class FullPythonAUPipeline:
         # Apply post-processing (cutoff adjustment, temporal smoothing)
         # This is CRITICAL for dynamic AU accuracy!
         if self.verbose:
-            print("\nApplying post-processing (cutoff adjustment, temporal smoothing)...")
+            safe_print("\nApplying post-processing (cutoff adjustment, temporal smoothing)...")
         df = self.finalize_predictions(df)
 
         if self.verbose:
-            print("")
-            print("=" * 80)
-            print("PROCESSING COMPLETE")
-            print("=" * 80)
-            print(f"Total frames processed: {total_processed}")
-            print(f"Failed frames: {total_failed}")
-            print(f"Success rate: {total_processed/(total_processed+total_failed)*100:.1f}%")
-            print("")
+            safe_print("")
+            safe_print("=" * 80)
+            safe_print("PROCESSING COMPLETE")
+            safe_print("=" * 80)
+            safe_print(f"Total frames processed: {total_processed}")
+            safe_print(f"Failed frames: {total_failed}")
+            safe_print(f"Success rate: {total_processed/(total_processed+total_failed)*100:.1f}%")
+            safe_print("")
 
         # Save to CSV if requested
         if output_csv:
             df.to_csv(output_csv, index=False)
             if self.verbose:
-                print(f"Results saved to: {output_csv}")
-                print("")
+                safe_print(f"Results saved to: {output_csv}")
+                safe_print("")
 
         return df
 
@@ -718,7 +727,7 @@ class FullPythonAUPipeline:
             if self.track_faces and self.cached_bbox is not None:
                 # Try using cached bbox (skip expensive PyMTCNN!)
                 if self.verbose and frame_idx < 3:
-                    print(f"[Frame {frame_idx}] Step 1: Using cached bbox (tracking mode)")
+                    safe_print(f"[Frame {frame_idx}] Step 1: Using cached bbox (tracking mode)")
                 bbox = self.cached_bbox
                 need_detection = False
                 self.frames_since_detection += 1
@@ -726,10 +735,10 @@ class FullPythonAUPipeline:
             if need_detection or bbox is None:
                 # First frame OR previous tracking failed - run PyMTCNN
                 if self.verbose and frame_idx < 3:
-                    print(f"[Frame {frame_idx}] Step 1: Detecting face with {self.face_detector.backend}...")
+                    safe_print(f"[Frame {frame_idx}] Step 1: Detecting face with {self.face_detector.backend}...")
                 detections, _ = self.face_detector.detect_faces(frame)
                 if self.verbose and frame_idx < 3:
-                    print(f"[Frame {frame_idx}] Step 1: Found {len(detections)} faces")
+                    safe_print(f"[Frame {frame_idx}] Step 1: Found {len(detections)} faces")
 
                 if len(detections) == 0:
                     # No face detected - clear cache
@@ -764,7 +773,7 @@ class FullPythonAUPipeline:
             # Step 2: Detect landmarks using CLNF (OpenFace approach)
             t0 = time.time() if debug_info is not None else None
             if self.verbose and frame_idx < 3:
-                print(f"[Frame {frame_idx}] Step 2: Detecting landmarks with CLNF...")
+                safe_print(f"[Frame {frame_idx}] Step 2: Detecting landmarks with CLNF...")
 
             try:
                 # Convert bbox from [x1, y1, x2, y2] to [x, y, width, height] for pyclnf
@@ -781,7 +790,7 @@ class FullPythonAUPipeline:
                 num_iterations = info['iterations']
 
                 if self.verbose and frame_idx < 3:
-                    print(f"[Frame {frame_idx}] Step 2: Got {len(landmarks_68)} landmarks (CLNF converged: {converged}, iterations: {num_iterations})")
+                    safe_print(f"[Frame {frame_idx}] Step 2: Got {len(landmarks_68)} landmarks (CLNF converged: {converged}, iterations: {num_iterations})")
 
                 if debug_info is not None:
                     debug_info['landmark_detection'] = {
@@ -795,7 +804,7 @@ class FullPythonAUPipeline:
                 # Landmark detection failed with cached bbox - re-run face detection
                 if self.track_faces and not need_detection:
                     if self.verbose and frame_idx < 3:
-                        print(f"[Frame {frame_idx}] Step 2: Landmark detection failed with cached bbox, re-detecting face...")
+                        safe_print(f"[Frame {frame_idx}] Step 2: Landmark detection failed with cached bbox, re-detecting face...")
                     self.detection_failures += 1
                     self.cached_bbox = None
 
@@ -836,7 +845,7 @@ class FullPythonAUPipeline:
             # See GEOMETRIC_FEATURES_BUG.md for details
             t0 = time.time() if debug_info is not None else None
             if self.verbose and frame_idx < 3:
-                print(f"[Frame {frame_idx}] Step 3: Extracting pose from pyclnf params...")
+                safe_print(f"[Frame {frame_idx}] Step 3: Extracting pose from pyclnf params...")
 
             if 'params' in info:
                 # Use params from pyclnf CLNF optimization (CORRECT approach)
@@ -870,7 +879,7 @@ class FullPythonAUPipeline:
             # Step 4: Align face
             t0 = time.time() if debug_info is not None else None
             if self.verbose and frame_idx < 3:
-                print(f"[Frame {frame_idx}] Step 4: Aligning face...")
+                safe_print(f"[Frame {frame_idx}] Step 4: Aligning face...")
             aligned_face = self.face_aligner.align_face(
                 image=frame,
                 landmarks_68=landmarks_68,
@@ -881,7 +890,7 @@ class FullPythonAUPipeline:
                 triangulation=self.triangulation
             )
             if self.verbose and frame_idx < 3:
-                print(f"[Frame {frame_idx}] Step 4: Aligned face shape: {aligned_face.shape}")
+                safe_print(f"[Frame {frame_idx}] Step 4: Aligned face shape: {aligned_face.shape}")
 
             if debug_info is not None:
                 debug_info['alignment'] = {
@@ -892,7 +901,7 @@ class FullPythonAUPipeline:
             # Step 5: Extract HOG features
             t0 = time.time() if debug_info is not None else None
             if self.verbose and frame_idx < 3:
-                print(f"[Frame {frame_idx}] Step 5: Extracting HOG features...")
+                safe_print(f"[Frame {frame_idx}] Step 5: Extracting HOG features...")
             hog_features = pyfhog.extract_fhog_features(
                 aligned_face,
                 cell_size=8
@@ -900,7 +909,7 @@ class FullPythonAUPipeline:
             # pyfhog 0.1.4+ outputs in OpenFace-compatible format (no transpose needed)
             # The HOG flattening order matches C++ OpenFace Face_utils.cpp line 265
             if self.verbose and frame_idx < 3:
-                print(f"[Frame {frame_idx}] Step 5: HOG features shape: {hog_features.shape}")
+                safe_print(f"[Frame {frame_idx}] Step 5: HOG features shape: {hog_features.shape}")
 
             if debug_info is not None:
                 debug_info['hog_extraction'] = {
@@ -911,10 +920,10 @@ class FullPythonAUPipeline:
             # Step 6: Extract geometric features
             t0 = time.time() if debug_info is not None else None
             if self.verbose and frame_idx < 3:
-                print(f"[Frame {frame_idx}] Step 6: Extracting geometric features...")
+                safe_print(f"[Frame {frame_idx}] Step 6: Extracting geometric features...")
             geom_features = self.pdm_parser.extract_geometric_features(params_local)
             if self.verbose and frame_idx < 3:
-                print(f"[Frame {frame_idx}] Step 6: Geometric features shape: {geom_features.shape}")
+                safe_print(f"[Frame {frame_idx}] Step 6: Geometric features shape: {geom_features.shape}")
 
             # Ensure float32 for Cython compatibility
             hog_features = hog_features.astype(np.float32)
@@ -929,14 +938,14 @@ class FullPythonAUPipeline:
             # Step 7: Update running median
             t0 = time.time() if debug_info is not None else None
             if self.verbose and frame_idx < 3:
-                print(f"[Frame {frame_idx}] Step 7: Updating running median...")
+                safe_print(f"[Frame {frame_idx}] Step 7: Updating running median...")
             # C++ increments frames_tracking BEFORE the check, so frame 0 → counter=1 → update
             # To match: update on frames 0, 2, 4, 6... (even frames)
             update_histogram = (frame_idx % 2 == 0)  # Match C++ timing
             self.running_median.update(hog_features, geom_features, update_histogram=update_histogram)
             running_median = self.running_median.get_combined_median()
             if self.verbose and frame_idx < 3:
-                print(f"[Frame {frame_idx}] Step 7: Running median shape: {running_median.shape}")
+                safe_print(f"[Frame {frame_idx}] Step 7: Running median shape: {running_median.shape}")
 
             if debug_info is not None:
                 debug_info['running_median'] = {
@@ -952,7 +961,7 @@ class FullPythonAUPipeline:
             # Step 8: Predict AUs
             t0 = time.time() if debug_info is not None else None
             if self.verbose and frame_idx < 3:
-                print(f"[Frame {frame_idx}] Step 8: Predicting AUs...")
+                safe_print(f"[Frame {frame_idx}] Step 8: Predicting AUs...")
             au_results = self._predict_aus(
                 hog_features,
                 geom_features,
@@ -988,7 +997,7 @@ class FullPythonAUPipeline:
 
         except Exception as e:
             if self.verbose:
-                print(f"Warning: Frame {frame_idx} failed: {e}")
+                safe_print(f"Warning: Frame {frame_idx} failed: {e}")
 
         return result
 
@@ -1063,9 +1072,9 @@ class FullPythonAUPipeline:
             DataFrame with finalized AU predictions
         """
         if self.verbose:
-            print("")
-            print("Applying post-processing...")
-            print("  [1/3] Two-pass median correction...")
+            safe_print("")
+            safe_print("Applying post-processing...")
+            safe_print("  [1/3] Two-pass median correction...")
 
         # Two-pass reprocessing: Re-predict AUs for early frames using final running median
         # This fixes systematic baseline offset from immature running median in early frames
@@ -1073,7 +1082,7 @@ class FullPythonAUPipeline:
             final_median = self.running_median.get_combined_median()
 
             if self.verbose:
-                print(f"    Re-predicting {len(self.stored_features)} early frames with final median...")
+                safe_print(f"    Re-predicting {len(self.stored_features)} early frames with final median...")
 
             # Re-predict AUs for stored frames
             for frame_idx, hog_features, geom_features in self.stored_features:
@@ -1088,13 +1097,13 @@ class FullPythonAUPipeline:
             self.stored_features = []
 
             if self.verbose:
-                print(f"    Two-pass correction complete")
+                safe_print(f"    Two-pass correction complete")
         else:
             if self.verbose:
-                print("    (No stored features - skipping)")
+                safe_print("    (No stored features - skipping)")
 
         if self.verbose:
-            print("  [2/3] Cutoff adjustment...")
+            safe_print("  [2/3] Cutoff adjustment...")
 
         # Apply cutoff adjustment for dynamic models
         au_cols = [col for col in df.columns if col.startswith('AU') and col.endswith('_r')]
@@ -1150,7 +1159,7 @@ class FullPythonAUPipeline:
                 df[au_col] = np.clip(au_values - offset, 0.0, 5.0)
 
         if self.verbose:
-            print("  [3/3] Temporal smoothing...")
+            safe_print("  [3/3] Temporal smoothing...")
 
         # Apply 3-frame moving average
         for au_col in au_cols:
@@ -1158,7 +1167,7 @@ class FullPythonAUPipeline:
             df[au_col] = smoothed
 
         if self.verbose:
-            print("Post-processing complete")
+            safe_print("Post-processing complete")
 
         return df
 
@@ -1219,7 +1228,7 @@ Examples:
             verbose=True
         )
     except Exception as e:
-        print(f"Failed to initialize pipeline: {e}")
+        safe_print(f"Failed to initialize pipeline: {e}")
         return 1
 
     # Process video
@@ -1236,28 +1245,28 @@ Examples:
         # Save final results
         df.to_csv(args.output, index=False)
 
-        print("=" * 80)
-        print("SUCCESS")
-        print("=" * 80)
-        print(f"Processed {len(df)} frames")
-        print(f"Results saved to: {args.output}")
-        print("")
+        safe_print("=" * 80)
+        safe_print("SUCCESS")
+        safe_print("=" * 80)
+        safe_print(f"Processed {len(df)} frames")
+        safe_print(f"Results saved to: {args.output}")
+        safe_print("")
 
         # Show AU statistics
         au_cols = [col for col in df.columns if col.startswith('AU') and col.endswith('_r')]
         if au_cols:
-            print("AU Statistics:")
+            safe_print("AU Statistics:")
             for au_col in sorted(au_cols):
                 success_frames = df[df['success'] == True]
                 if len(success_frames) > 0:
                     mean_val = success_frames[au_col].mean()
                     max_val = success_frames[au_col].max()
-                    print(f"  {au_col}: mean={mean_val:.3f}, max={max_val:.3f}")
+                    safe_print(f"  {au_col}: mean={mean_val:.3f}, max={max_val:.3f}")
 
         return 0
 
     except Exception as e:
-        print(f"Processing failed: {e}")
+        safe_print(f"Processing failed: {e}")
         import traceback
         traceback.print_exc()
         return 1
