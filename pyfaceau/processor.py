@@ -165,6 +165,8 @@ class OpenFaceProcessor:
         - stored_features list (can be up to 56 MB for long videos)
         - running median histograms
         - face tracking cache
+        - CLNF temporal state
+        - MPS/CUDA GPU memory
 
         This should be called between videos to prevent memory accumulation.
         """
@@ -182,6 +184,24 @@ class OpenFaceProcessor:
                 self.pipeline.cached_bbox = None
                 self.pipeline.detection_failures = 0
                 self.pipeline.frames_since_detection = 0
+
+            # Reset CLNF temporal state to prevent memory accumulation
+            if hasattr(self.pipeline, 'clnf') and self.pipeline.clnf is not None:
+                self.pipeline.clnf.reset_temporal_state()
+
+        # Release GPU memory (MPS for Apple Silicon, CUDA for NVIDIA)
+        try:
+            import torch
+            if torch.backends.mps.is_available():
+                torch.mps.empty_cache()
+            elif torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        except Exception:
+            pass  # Ignore if torch not available
+
+        # Force garbage collection
+        import gc
+        gc.collect()
 
 
 def process_videos(
