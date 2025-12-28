@@ -185,9 +185,12 @@ class OpenFaceProcessor:
                 self.pipeline.detection_failures = 0
                 self.pipeline.frames_since_detection = 0
 
-            # Reset CLNF temporal state to prevent memory accumulation
+            # Reset CLNF temporal state and clear GPU caches
             if hasattr(self.pipeline, 'clnf') and self.pipeline.clnf is not None:
                 self.pipeline.clnf.reset_temporal_state()
+                # Clear GPU memory caches (added in pyclnf 0.3.3)
+                if hasattr(self.pipeline.clnf, 'clear_gpu_cache'):
+                    self.pipeline.clnf.clear_gpu_cache()
 
         # Release GPU memory (MPS for Apple Silicon, CUDA for NVIDIA)
         try:
