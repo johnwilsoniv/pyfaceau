@@ -97,7 +97,7 @@ def benchmark_parallel(video_path, num_workers=6, max_frames=100):
     elif overall_fps >= 30:
         print("✅ MINIMUM GOAL ACHIEVED! (30+ FPS)")
     elif overall_fps >= 20:
-        print("⚠️ GOOD PROGRESS (20+ FPS) - Continue optimizing")
+        print("[WARNING] GOOD PROGRESS (20+ FPS) - Continue optimizing")
     else:
         print("❌ BELOW TARGET (< 20 FPS) - More optimization needed")
 

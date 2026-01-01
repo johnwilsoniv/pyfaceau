@@ -90,15 +90,15 @@ def main():
         output_path = weights_dir / filename
 
         if output_path.exists():
-            print(f"✓ {filename} (already exists)")
+            print(f"[OK] {filename} (already exists)")
             continue
 
         url = WEIGHTS_BASE_URL + filename
         try:
             download_file(url, output_path, desc=f"{filename} ({description})")
-            print(f"✓ Downloaded {filename}")
+            print(f"[OK] Downloaded {filename}")
         except Exception as e:
-            print(f"✗ Failed to download {filename}: {e}")
+            print(f"[FAILED] Failed to download {filename}: {e}")
             return 1
 
     # Download AU predictors
@@ -110,19 +110,19 @@ def main():
         output_path = au_dir / filename
 
         if output_path.exists():
-            print(f"✓ {filename} (already exists)")
+            print(f"[OK] {filename} (already exists)")
             continue
 
         url = WEIGHTS_BASE_URL + "AU_predictors/" + filename
         try:
             download_file(url, output_path, desc=filename)
-            print(f"✓ Downloaded {filename}")
+            print(f"[OK] Downloaded {filename}")
         except Exception as e:
-            print(f"✗ Failed to download {filename}: {e}")
+            print(f"[FAILED] Failed to download {filename}: {e}")
             return 1
 
     print("\n" + "=" * 60)
-    print("✓ All weights downloaded successfully!")
+    print("[OK] All weights downloaded successfully!")
     print(f"Weights location: {weights_dir}")
     print("\nYou can now use PyFaceAU:")
     print("  from pyfaceau import FullPythonAUPipeline")

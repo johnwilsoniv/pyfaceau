@@ -301,7 +301,7 @@ class DetailedBenchmark:
                 status = "🟡 MAJOR BOTTLENECK"
                 bottlenecks.append((component, mean_time, percentage, "major"))
             elif percentage > 5:
-                status = "⚠️  MINOR BOTTLENECK"
+                status = "[WARNING]  MINOR BOTTLENECK"
                 bottlenecks.append((component, mean_time, percentage, "minor"))
             else:
                 status = "✅ OPTIMIZED"
@@ -335,7 +335,7 @@ class DetailedBenchmark:
                         '5. Warmstart from previous frame'
                     ],
                     'expected_speedup': '2-15x',
-                    'priority': '🔥 HIGH' if severity == 'critical' else '⚠️ MEDIUM'
+                    'priority': '[!] HIGH' if severity == 'critical' else '[WARNING] MEDIUM'
                 })
 
             elif component == 'hog_extraction':
@@ -349,7 +349,7 @@ class DetailedBenchmark:
                         '4. OpenCV GPU HOG descriptor'
                     ],
                     'expected_speedup': '2-5x',
-                    'priority': '🔥 HIGH' if severity == 'critical' else '⚠️ MEDIUM'
+                    'priority': '[!] HIGH' if severity == 'critical' else '[WARNING] MEDIUM'
                 })
 
             elif component == 'au_prediction':
@@ -363,7 +363,7 @@ class DetailedBenchmark:
                         '4. Pre-cache mean centering'
                     ],
                     'expected_speedup': '2-10x',
-                    'priority': '⚠️ MEDIUM'
+                    'priority': '[WARNING] MEDIUM'
                 })
 
             elif component == 'face_detection':
@@ -378,7 +378,7 @@ class DetailedBenchmark:
                         '5. Use GPU ONNX provider'
                     ],
                     'expected_speedup': '2-10x',
-                    'priority': '🔥 HIGH' if severity == 'critical' else '⚠️ MEDIUM'
+                    'priority': '[!] HIGH' if severity == 'critical' else '[WARNING] MEDIUM'
                 })
 
             elif component == 'landmark_detection':
@@ -392,7 +392,7 @@ class DetailedBenchmark:
                         '4. Reduce input size if possible'
                     ],
                     'expected_speedup': '2-5x',
-                    'priority': '⚠️ MEDIUM'
+                    'priority': '[WARNING] MEDIUM'
                 })
 
         # Print recommendations
@@ -471,7 +471,7 @@ def main():
             verbose=False
         )
         pipeline._initialize_components()
-        print("✓ Pipeline initialized")
+        print("[OK] Pipeline initialized")
         print("")
     except Exception as e:
         print(f"❌ Failed to initialize pipeline: {e}")
@@ -490,7 +490,7 @@ def main():
         # Save results if requested
         if args.output:
             df.to_csv(args.output, index=False)
-            print(f"✓ Results saved to: {args.output}")
+            print(f"[OK] Results saved to: {args.output}")
             print("")
 
         print("=" * 80)

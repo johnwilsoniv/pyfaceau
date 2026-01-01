@@ -206,16 +206,16 @@ detector = OpenFaceMTCNN(nms_thresholds=[0.5, 0.5, 0.5])
 
 | Detector | Speed | Accuracy | CLNF-Ready |
 |----------|-------|----------|------------|
-| OpenFace MTCNN | Moderate | High | ✓ **Yes** |
+| OpenFace MTCNN | Moderate | High | [OK] **Yes** |
 | facenet-pytorch MTCNN | Moderate | High | Needs correction |
 | RetinaFace | Fast | Very High | Needs correction |
 | PFLD | Very Fast | Moderate | No |
 
 **When to use OpenFace MTCNN**:
-- ✓ CLNF pipeline (best choice)
-- ✓ Need 5-point landmarks
-- ✓ Frontal/near-frontal faces
-- ✓ Clinical applications
+- [OK] CLNF pipeline (best choice)
+- [OK] Need 5-point landmarks
+- [OK] Frontal/near-frontal faces
+- [OK] Clinical applications
 
 **When to use alternatives**:
 - RetinaFace: Extreme poses, occlusions

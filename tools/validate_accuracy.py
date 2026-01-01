@@ -228,7 +228,7 @@ def validate_calcparams(cpp_df, python_results):
         r, p = pearsonr(cpp_vals, python_vals)
         results[param] = r
 
-        status = "✓" if r > 0.995 else "✗"
+        status = "[OK]" if r > 0.995 else "[FAILED]"
         print(f"  {status} {param:8s}: r = {r:.6f} (p = {p:.3e})")
 
     # Local parameters (p_0 to p_33)
@@ -247,7 +247,7 @@ def validate_calcparams(cpp_df, python_results):
     min_local = np.min(local_corrs)
     max_local = np.max(local_corrs)
 
-    status = "✓" if mean_local > 0.995 else "✗"
+    status = "[OK]" if mean_local > 0.995 else "[FAILED]"
     print(f"  {status} Mean correlation: r = {mean_local:.6f}")
     print(f"    Min: {min_local:.6f}, Max: {max_local:.6f}")
     print(f"    Parameters < 0.99: {sum(1 for r in local_corrs if r < 0.99)}/34")
@@ -257,7 +257,7 @@ def validate_calcparams(cpp_df, python_results):
     local_pass = mean_local > 0.995
 
     overall_pass = all_global_pass and local_pass
-    status = "✓ PASS" if overall_pass else "✗ FAIL"
+    status = "[OK] PASS" if overall_pass else "[FAILED] FAIL"
     print(f"\n{status} CalcParams Overall Accuracy")
 
     return results
@@ -292,10 +292,10 @@ def validate_aus(cpp_df, python_results):
 
         if r > 0.83:
             passed.append(au)
-            status = "✓"
+            status = "[OK]"
         else:
             failed.append(au)
-            status = "✗"
+            status = "[FAILED]"
 
         print(f"  {status} {au}: r = {r:.4f} (p = {p:.3e})")
 
@@ -310,7 +310,7 @@ def validate_aus(cpp_df, python_results):
         print(f"  Failed AUs: {', '.join(failed)}")
 
     overall_pass = len(passed) >= 15  # At least 15/17 must pass
-    status = "✓ PASS" if overall_pass else "✗ FAIL"
+    status = "[OK] PASS" if overall_pass else "[FAILED] FAIL"
     print(f"\n{status} AU Prediction Overall Accuracy")
 
     return results
@@ -446,10 +446,10 @@ def generate_accuracy_report(calcparams_results, au_results, landmark_results, o
 
 | Component | Target | Result | Status |
 |-----------|--------|--------|--------|
-| CalcParams Global | r > 0.995 | r = {np.mean([calcparams_results[p] for p in global_params]):.6f} | {'✓ PASS' if global_pass else '✗ FAIL'} |
-| CalcParams Local | r > 0.995 | r = {np.mean(local_corrs):.6f} | {'✓ PASS' if local_pass else '✗ FAIL'} |
-| AU Predictions | 15/17 pass | {au_pass}/{au_total} pass | {'✓ PASS' if au_pass >= 15 else '✗ FAIL'} |
-| 3D Landmarks | r > 0.90 | r = {landmark_mean:.4f} | {'✓ PASS' if landmark_mean > 0.90 else '✗ FAIL'} |
+| CalcParams Global | r > 0.995 | r = {np.mean([calcparams_results[p] for p in global_params]):.6f} | {'[OK] PASS' if global_pass else '[FAILED] FAIL'} |
+| CalcParams Local | r > 0.995 | r = {np.mean(local_corrs):.6f} | {'[OK] PASS' if local_pass else '[FAILED] FAIL'} |
+| AU Predictions | 15/17 pass | {au_pass}/{au_total} pass | {'[OK] PASS' if au_pass >= 15 else '[FAILED] FAIL'} |
+| 3D Landmarks | r > 0.90 | r = {landmark_mean:.4f} | {'[OK] PASS' if landmark_mean > 0.90 else '[FAILED] FAIL'} |
 
 ## CalcParams Validation
 
@@ -461,7 +461,7 @@ def generate_accuracy_report(calcparams_results, au_results, landmark_results, o
 
     for param in global_params:
         r = calcparams_results[param]
-        status = "✓" if r > 0.995 else "✗"
+        status = "[OK]" if r > 0.995 else "[FAILED]"
         report += f"| {param} | {r:.6f} | {status} |\n"
 
     report += f"""
@@ -482,7 +482,7 @@ def generate_accuracy_report(calcparams_results, au_results, landmark_results, o
 """
 
     for au, r in sorted(au_results.items()):
-        status = "✓" if r > 0.83 else "✗"
+        status = "[OK]" if r > 0.83 else "[FAILED]"
         report += f"| {au} | {r:.4f} | {status} |\n"
 
     report += f"""
@@ -505,9 +505,9 @@ def generate_accuracy_report(calcparams_results, au_results, landmark_results, o
     all_pass = global_pass and local_pass and (au_pass >= 15) and (landmark_mean > 0.90)
 
     if all_pass:
-        report += "**✓ CERTIFICATION PASS**: PyFaceAU achieves target accuracy (99.9% fidelity to C++ OpenFace 2.2)\n"
+        report += "**[OK] CERTIFICATION PASS**: PyFaceAU achieves target accuracy (99.9% fidelity to C++ OpenFace 2.2)\n"
     else:
-        report += "**✗ CERTIFICATION FAIL**: PyFaceAU does not meet all accuracy targets\n\n"
+        report += "**[FAILED] CERTIFICATION FAIL**: PyFaceAU does not meet all accuracy targets\n\n"
         report += "### Issues Identified:\n\n"
 
         if not global_pass:

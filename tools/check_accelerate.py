@@ -32,7 +32,7 @@ def check_accelerate():
     if is_mac_arm:
         print("✅ Running on Apple Silicon (ARM64)")
     else:
-        print(f"⚠️  Not on Apple Silicon (detected: {platform.system()} {platform.machine()})")
+        print(f"[WARNING]  Not on Apple Silicon (detected: {platform.system()} {platform.machine()})")
     print("")
 
     # Import NumPy
@@ -104,7 +104,7 @@ def check_accelerate():
         print("No action needed - you're already optimized!")
         return True
     else:
-        print("⚠️  NumPy may NOT be using Accelerate framework")
+        print("[WARNING]  NumPy may NOT be using Accelerate framework")
         print("")
         print("To enable Accelerate (recommended):")
         print("")

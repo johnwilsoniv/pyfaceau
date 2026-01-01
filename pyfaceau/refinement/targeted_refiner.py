@@ -54,7 +54,7 @@ class TargetedCLNFRefiner:
         self.patch_experts = loader.load(target_landmarks=self.CRITICAL_LANDMARKS)
 
         if self.enforce_pdm and self.pdm is None:
-            print("⚠️ Warning: enforce_pdm=True but no PDM provided. PDM constraints disabled.")
+            print("[WARNING] Warning: enforce_pdm=True but no PDM provided. PDM constraints disabled.")
             self.enforce_pdm = False
 
         pdm_status = " + PDM constraints" if self.enforce_pdm else ""
