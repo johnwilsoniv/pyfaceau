@@ -2,6 +2,8 @@
 
 Pure Python implementation of OpenFace 2.2's Facial Action Unit extraction pipeline. Drop-in replacement for OpenFace with no C++ compilation required.
 
+**Accuracy: r = 0.97 correlation with C++ OpenFace 2.2** (verified on 917 frames)
+
 ## Installation
 
 ```bash
@@ -17,77 +19,70 @@ Model weights are downloaded automatically on first use (~50MB).
 
 ## Quick Start
 
+### Video Processing (Recommended)
+
 ```python
+from pyfaceau import OpenFaceProcessor
+
+# Initialize processor
+processor = OpenFaceProcessor(verbose=True)
+
+# Process video to CSV (same format as OpenFace)
+processor.process_video("input.mp4", "output.csv")
+```
+
+### Batch Processing
+
+```python
+from pyfaceau import process_videos
+
+# Process all videos in a directory
+process_videos(
+    directory_path="/path/to/videos",
+    output_dir="/path/to/output"
+)
+```
+
+### Frame-by-Frame Processing
+
+```python
+from pyfaceau import FullPythonAUPipeline
+from pathlib import Path
 import cv2
-from pyfaceau import FaceAnalyzer
 
-# Initialize analyzer
-analyzer = FaceAnalyzer()
+# Initialize pipeline with model paths
+weights_dir = Path("weights")
+pipeline = FullPythonAUPipeline(
+    pdm_file=str(weights_dir / "In-the-wild_aligned_PDM_68.txt"),
+    au_models_dir=str(weights_dir / "AU_predictors"),
+    triangulation_file=str(weights_dir / "tris_68_full.txt"),
+    patch_expert_file=str(weights_dir / "svr_patches_0.25_general.txt")
+)
 
-# Load and analyze an image
+# Process single frame
 image = cv2.imread("face.jpg")
-result = analyzer.analyze(image)
+image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
-# Access results
-print(result.au_intensities)  # {'AU01': 0.5, 'AU02': 0.3, ...}
-print(result.landmarks)        # (68, 2) array
-print(result.pose)             # (pitch, yaw, roll)
-```
+result = pipeline.process_frame(image_rgb, frame_num=0)
 
-## Video Processing
-
-```python
-import cv2
-from pyfaceau import FaceAnalyzer
-
-analyzer = FaceAnalyzer()
-cap = cv2.VideoCapture("video.mp4")
-
-while True:
-    ret, frame = cap.read()
-    if not ret:
-        break
-
-    result = analyzer.analyze(frame)
-    if result is not None:
-        # AU intensities as dict
-        for au, intensity in result.au_intensities.items():
-            print(f"{au}: {intensity:.2f}")
-
-cap.release()
-```
-
-## Batch Processing
-
-```python
-from pyfaceau import FaceAnalyzer
-import cv2
-import pandas as pd
-
-analyzer = FaceAnalyzer()
-cap = cv2.VideoCapture("video.mp4")
-
-results = []
-frame_num = 0
-
-while True:
-    ret, frame = cap.read()
-    if not ret:
-        break
-
-    result = analyzer.analyze(frame)
-    if result is not None:
-        row = {'frame': frame_num, **result.au_intensities}
-        results.append(row)
-
-    frame_num += 1
-
-# Save to CSV (same format as OpenFace)
-df = pd.DataFrame(results)
-df.to_csv("output.csv", index=False)
+if result['success']:
+    print("AU intensities:", result['au_intensities'])
+    print("Landmarks shape:", result['landmarks_2d'].shape)  # (68, 2)
+    print("Pose (pitch, yaw, roll):", result['pose'])
 ```
 
 ## Output Format
+
+### CSV Output Columns
+
+The output CSV matches OpenFace format:
+- `frame` - Frame number
+- `timestamp` - Time in seconds
+- `confidence` - Detection confidence
+- `success` - Whether face was detected
+- `AU01_r` through `AU45_r` - AU intensities (0.0 - 5.0)
+- `pose_Rx`, `pose_Ry`, `pose_Rz` - Head pose in radians
+- `x_0` through `x_67`, `y_0` through `y_67` - 68 landmark coordinates
 
 ### Action Units
 
@@ -113,42 +108,30 @@ df.to_csv("output.csv", index=False)
 | AU26 | Jaw Drop |
 | AU45 | Blink |
 
-### Landmarks
+## Accuracy
 
-68-point facial landmarks following the Multi-PIE format, same as OpenFace.
+Validated against C++ OpenFace 2.2 on 917 frames:
 
-### Pose
+| Metric | Correlation |
+|--------|-------------|
+| **Overall Mean** | r = 0.97 |
+| **Overall Median** | r = 0.996 |
+| Static AUs | r = 0.98 |
+| Dynamic AUs | r = 0.96 |
 
-Head pose as (pitch, yaw, roll) in radians.
-
-## Comparison with OpenFace 2.2
-
-| Feature | OpenFace 2.2 | pyfaceau |
-|---------|--------------|----------|
-| Language | C++ | Pure Python |
-| Installation | Compile from source | `pip install` |
-| Platform | Linux, macOS, Windows | Same |
-| GPU Acceleration | OpenCV CUDA | CoreML (Mac), CUDA |
-| Action Units | 17 AUs | 17 AUs (identical) |
-| Landmarks | 68 points | 68 points (identical) |
-| Accuracy | Reference | r=0.86 correlation |
-
-## Advanced Options
-
-```python
-analyzer = FaceAnalyzer(
-    use_gpu=True,           # Enable GPU acceleration
-    detector="pymtcnn",     # Face detector: "pymtcnn" or "retinaface"
-    verbose=False           # Disable initialization messages
-)
-```
+Per-AU correlations:
+- AU01: 0.997, AU02: 0.999, AU04: 0.989, AU05: 0.999
+- AU06: 0.999, AU07: 0.996, AU09: 0.997, AU10: 0.994
+- AU12: 0.998, AU14: 0.974, AU15: 0.893, AU17: 0.948
+- AU20: 0.817, AU23: 0.996, AU25: 0.984, AU26: 0.902, AU45: 0.998
 
 ## Requirements
 
 - Python 3.8+
 - numpy
 - opencv-python
-- torch (for AU prediction)
+- torch
+- scipy
 
 ## Acknowledgments
 
@@ -160,7 +143,7 @@ Based on OpenFace 2.0:
 
 If you use this in research, please cite:
 
-> Wilson IV, J., Rosenberg, J., Gray, M. L., & Razavi, C. R. (2025). A split-face computer vision/machine learning assessment of facial paralysis using facial action units. *Facial Plastic Surgery & Aesthetic Medicine*. https://doi.org/10.1177/26893614251394382
+> Wilson IV, J., Rosenberg, J., Gray, M. L., & Razavi, C. R. (2025). A split-face computer vision/machine learning assessment of facial paralysis using facial action units. *Facial Plastic Surgery & Aesthetic Medicine*. https://doi.org/10.1177/26393614251394382
 
 ## License
 
