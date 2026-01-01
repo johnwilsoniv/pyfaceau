@@ -2,7 +2,7 @@
 
 Pure Python implementation of OpenFace 2.2's Facial Action Unit extraction pipeline. Drop-in replacement for OpenFace with no C++ compilation required.
 
-**Accuracy: r = 0.97 correlation with C++ OpenFace 2.2** (verified on 917 frames)
+**Accuracy: r = 0.97 correlation with C++ OpenFace 2.2**
 
 ## Installation
 
@@ -110,7 +110,7 @@ The output CSV matches OpenFace format:
 
 ## Accuracy
 
-Validated against C++ OpenFace 2.2 on 917 frames:
+Validated against C++ OpenFace 2.2
 
 | Metric | Correlation |
 |--------|-------------|
