@@ -43,7 +43,7 @@ def validate_video(video_name, video_path, cpp_ref_csv):
     start_time = time.time()
     python_results = generate_python_outputs(video_path, cpp_df, max_frames=None)
     elapsed = time.time() - start_time
-    print(f"  ✓ Processed {len(python_results)} frames in {elapsed:.1f}s ({len(python_results)/elapsed:.1f} fps)")
+    print(f"  [OK] Processed {len(python_results)} frames in {elapsed:.1f}s ({len(python_results)/elapsed:.1f} fps)")
 
     # Validate AUs
     print(f"  Validating AUs...")
@@ -57,7 +57,7 @@ def validate_video(video_name, video_path, cpp_ref_csv):
     for au_name, corr in sorted(au_results.items()):
         au_correlations[au_name] = corr
 
-        status = "✓" if corr > 0.83 else "✗"
+        status = "[OK]" if corr > 0.83 else "[FAILED]"
         print(f"    {status} {au_name}: {corr:.4f}")
 
         if corr > 0.83:
@@ -89,14 +89,14 @@ def main():
         cpp_ref_csv = CPP_REF_DIR / f"{video_name}.csv"
 
         if not cpp_ref_csv.exists():
-            print(f"✗ Skipping {video_name}: C++ reference not found")
+            print(f"[FAILED] Skipping {video_name}: C++ reference not found")
             continue
 
         try:
             result = validate_video(video_name, video_path, cpp_ref_csv)
             results.append(result)
         except Exception as e:
-            print(f"✗ Error processing {video_name}: {e}")
+            print(f"[FAILED] Error processing {video_name}: {e}")
             import traceback
             traceback.print_exc()
 
@@ -163,7 +163,7 @@ def main():
     excellent_aus = [au for au, stats in au_summary.items() if stats['mean'] > 0.95]
     if excellent_aus:
         for au in excellent_aus:
-            print(f"  ✓ {au}: {au_summary[au]['mean']:.4f} (passing {au_summary[au]['passing_videos']}/{len(results)} videos)")
+            print(f"  [OK] {au}: {au_summary[au]['mean']:.4f} (passing {au_summary[au]['passing_videos']}/{len(results)} videos)")
     else:
         print("  None")
 
@@ -171,7 +171,7 @@ def main():
     good_aus = [au for au, stats in au_summary.items() if 0.90 < stats['mean'] <= 0.95]
     if good_aus:
         for au in good_aus:
-            print(f"  ✓ {au}: {au_summary[au]['mean']:.4f} (passing {au_summary[au]['passing_videos']}/{len(results)} videos)")
+            print(f"  [OK] {au}: {au_summary[au]['mean']:.4f} (passing {au_summary[au]['passing_videos']}/{len(results)} videos)")
     else:
         print("  None")
 
@@ -179,7 +179,7 @@ def main():
     acceptable_aus = [au for au, stats in au_summary.items() if 0.83 < stats['mean'] <= 0.90]
     if acceptable_aus:
         for au in acceptable_aus:
-            print(f"  ✓ {au}: {au_summary[au]['mean']:.4f} (passing {au_summary[au]['passing_videos']}/{len(results)} videos)")
+            print(f"  [OK] {au}: {au_summary[au]['mean']:.4f} (passing {au_summary[au]['passing_videos']}/{len(results)} videos)")
     else:
         print("  None")
 
@@ -187,7 +187,7 @@ def main():
     failing_aus = [au for au, stats in au_summary.items() if stats['mean'] <= 0.83]
     if failing_aus:
         for au in failing_aus:
-            print(f"  ✗ {au}: {au_summary[au]['mean']:.4f} (passing {au_summary[au]['passing_videos']}/{len(results)} videos)")
+            print(f"  [FAILED] {au}: {au_summary[au]['mean']:.4f} (passing {au_summary[au]['passing_videos']}/{len(results)} videos)")
     else:
         print("  None - All AUs passing!")
 
@@ -205,7 +205,7 @@ def main():
 
     df_matrix = pd.DataFrame(au_matrix)
     df_matrix.to_csv('multi_video_au_correlations.csv', index=False)
-    print(f"  ✓ Saved: multi_video_au_correlations.csv")
+    print(f"  [OK] Saved: multi_video_au_correlations.csv")
 
     # Create AU summary statistics
     au_summary_rows = []
@@ -222,7 +222,7 @@ def main():
     df_summary = pd.DataFrame(au_summary_rows)
     df_summary = df_summary.sort_values('Mean', ascending=False)
     df_summary.to_csv('multi_video_au_summary.csv', index=False)
-    print(f"  ✓ Saved: multi_video_au_summary.csv")
+    print(f"  [OK] Saved: multi_video_au_summary.csv")
 
     print(f"\n{'='*80}")
     print(f"Multi-Video Validation Complete!")

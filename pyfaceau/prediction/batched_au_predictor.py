@@ -223,7 +223,7 @@ def test_batched_predictor():
         diff = abs(seq_val - batch_val)
         match = diff < 1e-5
 
-        print(f"{au_name:<12} {seq_val:<12.6f} {batch_val:<12.6f} {diff:<12.9f} {'✓' if match else '✗'}")
+        print(f"{au_name:<12} {seq_val:<12.6f} {batch_val:<12.6f} {diff:<12.9f} {'[OK]' if match else '[FAILED]'}")
 
         max_diff = max(max_diff, diff)
         all_match = all_match and match

@@ -232,7 +232,7 @@ class OF22ModelParser:
             except FileNotFoundError as e:
                 failed_aus.append(au_name)
                 if verbose:
-                    print(f"✗ Failed to load {au_name}: {e}")
+                    print(f"[FAILED] Failed to load {au_name}: {e}")
 
         if verbose:
             print(f"\nLoaded {len(models)}/{len(self.available_aus)} AU models")

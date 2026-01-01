@@ -30,7 +30,7 @@ def test_accuracy_vs_cpp():
     print("TEST: Accuracy vs C++ OpenFace 2.2")
     print("="*80)
 
-    print("\n⚠️  This test requires:")
+    print("\n[WARNING]  This test requires:")
     print("  1. Validation video and CSV from C++ OpenFace")
     print("  2. ~5-10 minutes to process 1110 frames")
     print("\nTo implement this test, adapt code from:")
@@ -50,7 +50,7 @@ def main():
     test_accuracy_vs_cpp()
 
     print("\n" + "="*80)
-    print("✓ Accuracy test framework ready")
+    print("[OK] Accuracy test framework ready")
     print("  (Implement full validation as needed)")
     print("="*80)
 
