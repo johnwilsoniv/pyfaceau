@@ -68,3 +68,4 @@ test_output/
 # weights/*.onnx
 # weights/*.txt
 # weights/*.mlpackage
+.claude/
