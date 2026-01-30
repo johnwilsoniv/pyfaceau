@@ -1,6 +1,6 @@
 # pyfaceau
 
-Pure Python implementation of OpenFace 2.2's Facial Action Unit extraction pipeline. Drop-in replacement for OpenFace with no C++ compilation required.
+A python-based implementation of OpenFace 2.2's Facial Action Unit extraction pipeline with an accurate dlib substitute (ptmtcnn, pyclnf).
 
 **Accuracy: r = 0.97 correlation with C++ OpenFace 2.2**
 
