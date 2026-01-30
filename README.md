@@ -135,7 +135,7 @@ Per-AU correlations:
 
 ## Acknowledgments
 
-Based on OpenFace 2.0:
+Based on OpenFace 2.2:
 
 > Baltrusaitis, T., Zadeh, A., Lim, Y. C., & Morency, L. P. (2018). OpenFace 2.0: Facial Behavior Analysis Toolkit. IEEE International Conference on Automatic Face and Gesture Recognition.
 
