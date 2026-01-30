@@ -4,13 +4,12 @@ Full Python AU Extraction Pipeline - End-to-End
 
 This script integrates all Python components into a complete AU extraction pipeline:
 1. Face Detection (PyMTCNN with CUDA/CoreML/CPU support)
-2. Landmark Detection (Cunjian PFLD)
-3. 3D Pose Estimation (from pyclnf CLNF optimization params)
-4. Face Alignment (OpenFace 2.2 algorithm)
-5. HOG Feature Extraction (PyFHOG)
-6. Geometric Feature Extraction (PDM)
-7. Running Median Tracking (Cython-optimized)
-8. AU Prediction (SVR models)
+2. Landmark Detection + 3D Pose Estimation (pyclnf CLNF)
+3. Face Alignment (OpenFace 2.2 algorithm)
+4. HOG Feature Extraction (PyFHOG)
+5. Geometric Feature Extraction (PDM)
+6. Running Median Tracking (Cython-optimized)
+7. AU Prediction (SVR models)
 
 No C++ OpenFace binary required - 100% Python!
 
