@@ -69,3 +69,7 @@ test_output/
 # weights/*.txt
 # weights/*.mlpackage
 .claude/
+
+# Comparison/test scripts
+spiga_vs_clnf_comparison.py
+test_venv_310/
