@@ -68,3 +68,7 @@ test_output/
 # weights/*.onnx
 # weights/*.txt
 # weights/*.mlpackage
+
+# Comparison/test scripts
+spiga_vs_clnf_comparison.py
+test_venv_310/
