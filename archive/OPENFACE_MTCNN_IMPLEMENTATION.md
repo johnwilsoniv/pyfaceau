@@ -390,6 +390,5 @@ Successfully implemented a complete PyTorch version of OpenFace 2.2 MTCNN with t
 ---
 
 **Implementation Date**: November 3, 2025
-**Author**: Claude (Sonnet 4.5)
 **Project**: SplitFace Open3 / PyfaceAU
 **Status**: Complete - Ready for Integration
