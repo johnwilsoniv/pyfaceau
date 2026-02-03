@@ -21,9 +21,9 @@ global-exclude *.pyo
 global-exclude __pycache__
 global-exclude .DS_Store
 
-# Exclude weights (too large for PyPI, users must download separately)
-exclude weights/*
-recursive-exclude weights *
+# Include weights for git-based installs (but these are excluded from PyPI sdist)
+# Users installing from git will get weights; PyPI users must download separately
+recursive-include weights *.txt *.dat
 
 # Exclude development files
 exclude .gitignore
