@@ -11,7 +11,7 @@ long_description = (this_directory / "README.md").read_text()
 
 setup(
     name="pyfaceau",
-    version="1.3.6",
+    version="1.3.10",
     author="John Wilson",
     author_email="",  # Add email if desired
     description="Pure Python OpenFace 2.2 AU extraction with PyMTCNN face detection and CLNF refinement",
@@ -76,6 +76,7 @@ setup(
         "console_scripts": [
             "pyfaceau=pyfaceau.processor:main",
             "pyfaceau-gui=pyfaceau_gui:main",
+            "pyfaceau-download-weights=pyfaceau.download_weights:main",
         ],
     },
     scripts=['pyfaceau_gui.py'],

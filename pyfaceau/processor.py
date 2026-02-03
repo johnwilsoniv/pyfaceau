@@ -12,6 +12,7 @@ import numpy as np
 from pathlib import Path
 from typing import Optional, Callable
 from .pipeline import FullPythonAUPipeline
+from .download_weights import get_weights_dir, ensure_weights, weights_exist
 
 
 def safe_print(*args, **kwargs):
@@ -59,6 +60,7 @@ class OpenFaceProcessor:
         use_clnf_refinement: bool = True,
         num_threads: int = 6,
         verbose: bool = False,
+        auto_download_weights: bool = True,
         **kwargs
     ):
         """
@@ -66,23 +68,47 @@ class OpenFaceProcessor:
 
         Args:
             device: Unused (kept for API compatibility). PyFaceAU auto-detects.
-            weights_dir: Path to weights directory (default: ./weights)
+            weights_dir: Path to weights directory. If None, searches in:
+                        1. PYFACEAU_WEIGHTS_DIR environment variable
+                        2. Sibling 'weights' directory (for dev installs)
+                        3. ~/.pyfaceau/weights/ (auto-downloaded)
             use_clnf_refinement: Enable CLNF landmark refinement (default: True)
             num_threads: Unused (kept for API compatibility)
             verbose: Enable verbose logging (default: False)
+            auto_download_weights: Automatically download weights if missing (default: True)
             **kwargs: Additional arguments (ignored for compatibility)
         """
         self.verbose = verbose
 
         # Determine weights directory
-        if weights_dir is None:
-            script_dir = Path(__file__).parent.parent
-            weights_dir = script_dir / 'weights'
-        else:
+        if weights_dir is not None:
             weights_dir = Path(weights_dir)
+            if not weights_dir.exists():
+                raise FileNotFoundError(
+                    f"Specified weights directory not found: {weights_dir}\n"
+                    f"Please ensure the weights are downloaded to this location."
+                )
+        else:
+            # Use automatic weight discovery/download
+            try:
+                weights_dir = ensure_weights(
+                    auto_download=auto_download_weights,
+                    verbose=verbose
+                )
+            except FileNotFoundError as e:
+                raise FileNotFoundError(
+                    f"PyFaceAU weights not found.\n\n"
+                    f"To download weights, run:\n"
+                    f"  python -m pyfaceau.download_weights\n\n"
+                    f"Or set PYFACEAU_WEIGHTS_DIR environment variable.\n\n"
+                    f"Original error: {e}"
+                )
+
+        weights_dir = Path(weights_dir)
 
         if self.verbose:
             safe_print("Initializing PyFaceAU (OpenFace 2.2 Python replacement)...")
+            safe_print(f"  Weights directory: {weights_dir}")
 
         # Initialize the PyFaceAU pipeline (OpenFace-compatible: PyMTCNN → CLNF → AU)
         self.pipeline = FullPythonAUPipeline(

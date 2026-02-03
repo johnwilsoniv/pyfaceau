@@ -6,6 +6,25 @@ A python-based implementation of OpenFace 2.2's Facial Action Unit extraction pi
 
 ## Installation
 
+### Option 1: Install from GitHub (Recommended for Development)
+
+This includes model weights:
+
+```bash
+# Clone repository with weights
+git clone https://github.com/johnwilsoniv/pyfaceau.git
+cd pyfaceau
+
+# Create conda environment (recommended)
+conda create -n pyfaceau python=3.11
+conda activate pyfaceau
+
+# Install in editable mode
+pip install -e .
+```
+
+### Option 2: Install from PyPI
+
 ```bash
 pip install pyfaceau
 ```
@@ -15,7 +34,31 @@ This automatically installs dependencies:
 - [pymtcnn](https://github.com/johnwilsoniv/pymtcnn) - Face detection
 - [pyfhog](https://github.com/johnwilsoniv/pyfhog) - FHOG feature extraction
 
-Model weights are downloaded automatically on first use (~50MB).
+### Model Weights
+
+Model weights (~50MB) are downloaded automatically on first use. If auto-download fails, download manually:
+
+```bash
+# Download weights
+python -m pyfaceau.download_weights
+
+# Or after pip install
+pyfaceau-download-weights
+```
+
+Weights are stored in `~/.pyfaceau/weights/`. You can customize this location:
+
+```bash
+# Set custom weights directory
+export PYFACEAU_WEIGHTS_DIR=/path/to/your/weights
+```
+
+### Troubleshooting: "PDM file not found"
+
+If you see this error:
+1. **First try**: Run `python -m pyfaceau.download_weights`
+2. **Manual fix**: Copy the `weights/` folder from the GitHub repo to `~/.pyfaceau/weights/`
+3. **Alternative**: Set `PYFACEAU_WEIGHTS_DIR` environment variable to point to your weights
 
 ## Quick Start
 

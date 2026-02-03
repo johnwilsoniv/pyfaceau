@@ -31,7 +31,12 @@ class PDMParser:
         """
         self.pdm_file_path = Path(pdm_file_path)
         if not self.pdm_file_path.exists():
-            raise FileNotFoundError(f"PDM file not found: {pdm_file_path}")
+            raise FileNotFoundError(
+                f"PDM file not found: {pdm_file_path}\n\n"
+                f"This file is required for AU prediction. To download weights, run:\n"
+                f"  python -m pyfaceau.download_weights\n\n"
+                f"Or set PYFACEAU_WEIGHTS_DIR environment variable to your weights directory."
+            )
 
         # Load PDM components
         self.mean_shape, self.princ_comp, self.eigen_values = self._parse_pdm()
