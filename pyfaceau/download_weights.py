@@ -13,6 +13,8 @@ Or programmatically:
 import os
 import sys
 import urllib.request
+import zipfile
+import tempfile
 from pathlib import Path
 
 # Try to import tqdm, fall back to simple progress if not available
@@ -23,47 +25,16 @@ except ImportError:
     TQDM_AVAILABLE = False
 
 
-# GitHub release URL for weights (use releases for large files, not raw repo)
-# Create a release at: https://github.com/johnwilsoniv/pyfaceau/releases with weights.zip
-WEIGHTS_BASE_URL = "https://github.com/johnwilsoniv/pyfaceau/releases/download/weights-v1.0/"
+# GitHub release URL for weights zip (~1.6MB compressed)
+WEIGHTS_ZIP_URL = "https://github.com/johnwilsoniv/pyfaceau/releases/download/weights-v1.0/pyfaceau-weights-v1.0.zip"
 
-# Fallback: Raw GitHub URL (for smaller text files)
-# Note: Binary .dat files may need LFS or release hosting
-WEIGHTS_FALLBACK_URL = "https://raw.githubusercontent.com/johnwilsoniv/pyfaceau/main/weights/"
-
-REQUIRED_WEIGHTS = {
-    # Note: Face detection uses PyMTCNN (installed separately)
-    # Note: Landmark detection uses CLNF (Constrained Local Neural Fields)
-    "In-the-wild_aligned_PDM_68.txt": "67KB - PDM shape model",
-    "svr_patches_0.25_general.txt": "1.1MB - CLNF patch experts",
-    "tris_68_full.txt": "1KB - Triangulation data",
-}
-
-# AU predictor files stored in AU_predictors/svr_combined/ subdirectory
-AU_PREDICTOR_FILES = [
-    "svr_combined/AU_1_dynamic_intensity_comb.dat",
-    "svr_combined/AU_2_dynamic_intensity_comb.dat",
-    "svr_combined/AU_4_static_intensity_comb.dat",
-    "svr_combined/AU_5_dynamic_intensity_comb.dat",
-    "svr_combined/AU_6_static_intensity_comb.dat",
-    "svr_combined/AU_7_static_intensity_comb.dat",
-    "svr_combined/AU_9_dynamic_intensity_comb.dat",
-    "svr_combined/AU_10_static_intensity_comb.dat",
-    "svr_combined/AU_12_static_intensity_comb.dat",
-    "svr_combined/AU_14_static_intensity_comb.dat",
-    "svr_combined/AU_15_dynamic_intensity_comb.dat",
-    "svr_combined/AU_17_dynamic_intensity_comb.dat",
-    "svr_combined/AU_20_dynamic_intensity_comb.dat",
-    "svr_combined/AU_23_dynamic_intensity_comb.dat",
-    "svr_combined/AU_25_dynamic_intensity_comb.dat",
-    "svr_combined/AU_26_dynamic_intensity_comb.dat",
-    "svr_combined/AU_45_dynamic_intensity_comb.dat",
-]
-
-# AU predictor config files
-AU_CONFIG_FILES = [
-    "AU_all_best.txt",
-    "main_dynamic_svms.txt",
+# Required files to verify successful download
+REQUIRED_FILES = [
+    "In-the-wild_aligned_PDM_68.txt",
+    "svr_patches_0.25_general.txt",
+    "tris_68_full.txt",
+    "AU_predictors/AU_all_best.txt",
+    "AU_predictors/svr_combined/AU_1_dynamic_intensity_comb.dat",
 ]
 
 
@@ -78,13 +49,10 @@ if TQDM_AVAILABLE:
 
 def download_file(url, output_path, desc=None):
     """Download a file with progress bar"""
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
-
     if TQDM_AVAILABLE:
         with DownloadProgressBar(unit='B', unit_scale=True, miniters=1, desc=desc) as t:
             urllib.request.urlretrieve(url, filename=output_path, reporthook=t.update_to)
     else:
-        # Simple fallback without progress bar
         print(f"  Downloading {desc or url}...")
         urllib.request.urlretrieve(url, filename=output_path)
 
@@ -97,12 +65,10 @@ def get_user_weights_dir():
     1. PYFACEAU_WEIGHTS_DIR environment variable
     2. ~/.pyfaceau/weights/
     """
-    # Check environment variable first
     env_dir = os.environ.get('PYFACEAU_WEIGHTS_DIR')
     if env_dir:
         weights_dir = Path(env_dir)
     else:
-        # Default to user home directory
         weights_dir = Path.home() / ".pyfaceau" / "weights"
 
     weights_dir.mkdir(parents=True, exist_ok=True)
@@ -124,20 +90,21 @@ def get_weights_dir():
     # Check environment variable first
     env_dir = os.environ.get('PYFACEAU_WEIGHTS_DIR')
     if env_dir and Path(env_dir).exists():
-        return Path(env_dir)
+        if weights_exist(Path(env_dir)):
+            return Path(env_dir)
 
     # Check sibling weights directory (for development/editable installs)
     try:
         pkg_dir = Path(__file__).parent.parent  # pyfaceau package parent
         dev_weights = pkg_dir / "weights"
-        if dev_weights.exists() and (dev_weights / "In-the-wild_aligned_PDM_68.txt").exists():
+        if dev_weights.exists() and weights_exist(dev_weights):
             return dev_weights
     except Exception:
         pass
 
     # Check user home directory
     user_weights = Path.home() / ".pyfaceau" / "weights"
-    if user_weights.exists() and (user_weights / "In-the-wild_aligned_PDM_68.txt").exists():
+    if user_weights.exists() and weights_exist(user_weights):
         return user_weights
 
     # Return user weights dir (will need download)
@@ -156,8 +123,8 @@ def weights_exist(weights_dir=None):
         return False
 
     # Check at least one AU model
-    au_dir = weights_dir / "AU_predictors" / "svr_combined"
-    if not au_dir.exists():
+    au_model = weights_dir / "AU_predictors" / "svr_combined" / "AU_1_dynamic_intensity_comb.dat"
+    if not au_model.exists():
         return False
 
     return True
@@ -194,7 +161,7 @@ def ensure_weights(auto_download=True, verbose=True):
         )
 
     if verbose:
-        print("PyFaceAU weights not found. Downloading...")
+        print("PyFaceAU weights not found. Downloading (~1.6MB)...")
 
     # Download to user weights directory
     download_dir = get_user_weights_dir()
@@ -227,111 +194,71 @@ def download_weights(weights_dir=None, verbose=True):
         print(f"Downloading weights to: {weights_dir}")
         print()
 
-    # Create directory structure
+    # Create directory
     weights_dir.mkdir(parents=True, exist_ok=True)
-    (weights_dir / "AU_predictors" / "svr_combined").mkdir(parents=True, exist_ok=True)
 
-    # Try primary URL first, fall back to secondary
-    base_urls = [WEIGHTS_BASE_URL, WEIGHTS_FALLBACK_URL]
+    # Download zip file to temp location
+    try:
+        with tempfile.NamedTemporaryFile(suffix='.zip', delete=False) as tmp_file:
+            tmp_path = tmp_file.name
 
-    # Download main weights
-    if verbose:
-        print("Downloading main model weights...")
+        if verbose:
+            print(f"Downloading weights from GitHub release...")
+            print(f"  URL: {WEIGHTS_ZIP_URL}")
 
-    for filename, description in REQUIRED_WEIGHTS.items():
-        output_path = weights_dir / filename
+        download_file(WEIGHTS_ZIP_URL, tmp_path, desc="pyfaceau-weights.zip")
 
-        if output_path.exists():
-            if verbose:
-                print(f"[OK] {filename} (already exists)")
-            continue
+        if verbose:
+            print(f"\nExtracting weights...")
 
-        downloaded = False
-        for base_url in base_urls:
-            url = base_url + filename
-            try:
-                download_file(url, str(output_path), desc=f"{filename} ({description})")
-                if verbose:
-                    print(f"[OK] Downloaded {filename}")
-                downloaded = True
-                break
-            except Exception as e:
-                if verbose:
-                    print(f"  (trying fallback URL...)")
-                continue
+        # Extract zip
+        with zipfile.ZipFile(tmp_path, 'r') as zip_ref:
+            zip_ref.extractall(weights_dir)
 
-        if not downloaded:
-            print(f"[FAILED] Failed to download {filename}")
-            print(f"  Please download manually from GitHub and place in: {output_path}")
+        if verbose:
+            print(f"  Extracted to: {weights_dir}")
+
+        # Verify extraction
+        missing = []
+        for req_file in REQUIRED_FILES:
+            if not (weights_dir / req_file).exists():
+                missing.append(req_file)
+
+        if missing:
+            print(f"\n[WARNING] Some files missing after extraction:")
+            for f in missing:
+                print(f"  - {f}")
             return 1
 
-    # Download AU predictor config files
-    if verbose:
-        print("\nDownloading AU predictor config files...")
+        if verbose:
+            print("\n" + "=" * 60)
+            print("[OK] All weights downloaded successfully!")
+            print(f"Weights location: {weights_dir}")
+            print("\nYou can now use PyFaceAU:")
+            print("  from pyfaceau import OpenFaceProcessor")
+            print("  processor = OpenFaceProcessor()")
 
-    au_dir = weights_dir / "AU_predictors"
-    for filename in AU_CONFIG_FILES:
-        output_path = au_dir / filename
+        return 0
 
-        if output_path.exists():
-            if verbose:
-                print(f"[OK] {filename} (already exists)")
-            continue
+    except urllib.error.URLError as e:
+        print(f"\n[ERROR] Failed to download weights: {e}")
+        print("\nPlease check your internet connection and try again.")
+        print("Or download manually from:")
+        print(f"  {WEIGHTS_ZIP_URL}")
+        print(f"And extract to: {weights_dir}")
+        return 1
 
-        downloaded = False
-        for base_url in base_urls:
-            url = base_url + "AU_predictors/" + filename
-            try:
-                download_file(url, str(output_path), desc=filename)
-                if verbose:
-                    print(f"[OK] Downloaded {filename}")
-                downloaded = True
-                break
-            except Exception:
-                continue
+    except Exception as e:
+        print(f"\n[ERROR] Unexpected error: {e}")
+        return 1
 
-        if not downloaded:
-            print(f"[FAILED] Failed to download {filename}")
-            return 1
-
-    # Download AU predictor models
-    if verbose:
-        print("\nDownloading AU predictor models (SVR weights)...")
-
-    for filename in AU_PREDICTOR_FILES:
-        output_path = au_dir / filename
-
-        if output_path.exists():
-            if verbose:
-                print(f"[OK] {filename} (already exists)")
-            continue
-
-        downloaded = False
-        for base_url in base_urls:
-            url = base_url + "AU_predictors/" + filename
-            try:
-                download_file(url, str(output_path), desc=filename.split('/')[-1])
-                if verbose:
-                    print(f"[OK] Downloaded {filename}")
-                downloaded = True
-                break
-            except Exception:
-                continue
-
-        if not downloaded:
-            print(f"[FAILED] Failed to download {filename}")
-            print(f"  Please download manually from GitHub and place in: {output_path}")
-            return 1
-
-    if verbose:
-        print("\n" + "=" * 60)
-        print("[OK] All weights downloaded successfully!")
-        print(f"Weights location: {weights_dir}")
-        print("\nYou can now use PyFaceAU:")
-        print("  from pyfaceau import OpenFaceProcessor")
-        print("  processor = OpenFaceProcessor()")
-
-    return 0
+    finally:
+        # Clean up temp file
+        try:
+            if 'tmp_path' in locals():
+                os.unlink(tmp_path)
+        except Exception:
+            pass
 
 
 def main():
