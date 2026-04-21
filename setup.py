@@ -2,12 +2,41 @@
 setup.py for pyfaceau - Pure Python OpenFace 2.2 AU Extraction
 """
 
-from setuptools import setup, find_packages
+from setuptools import setup, find_packages, Extension
 from pathlib import Path
 
 # Read long description from README
 this_directory = Path(__file__).parent
 long_description = (this_directory / "README.md").read_text()
+
+# Cython extensions for performance-critical paths.
+# These compile from .pyx sources during `pip install` so that PyPI installs
+# get the same fast paths as local editable installs. If Cython or numpy is
+# unavailable at build time, the package still installs and falls back to the
+# pure-Python implementations at runtime (see pipeline.py imports).
+ext_modules = []
+try:
+    from Cython.Build import cythonize
+    import numpy as np
+    ext_modules = cythonize(
+        [
+            Extension(
+                name="pyfaceau.cython_histogram_median",
+                sources=["pyfaceau/utils/cython_extensions/cython_histogram_median.pyx"],
+                include_dirs=[np.get_include()],
+            ),
+            Extension(
+                name="pyfaceau.cython_rotation_update",
+                sources=["pyfaceau/utils/cython_extensions/cython_rotation_update.pyx"],
+                include_dirs=[np.get_include()],
+            ),
+        ],
+        compiler_directives={"language_level": "3"},
+    )
+except ImportError:
+    # Cython/numpy not available at build time; runtime will fall back to
+    # pure-Python implementations.
+    pass
 
 setup(
     name="pyfaceau",
@@ -82,7 +111,15 @@ setup(
     scripts=['pyfaceau_gui.py'],
     include_package_data=True,
     package_data={
-        "pyfaceau": ["*.txt", "*.json"],
+        "pyfaceau": [
+            "*.txt",
+            "*.json",
+            # Ship .pyx sources alongside the compiled .so files so users can
+            # rebuild from source if needed.
+            "utils/cython_extensions/*.pyx",
+            "utils/cython_extensions/*.pxd",
+        ],
     },
+    ext_modules=ext_modules,
     zip_safe=False,
 )
