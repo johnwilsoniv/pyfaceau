@@ -40,7 +40,7 @@ except ImportError:
 
 setup(
     name="pyfaceau",
-    version="1.3.11",
+    version="1.3.12",
     author="John Wilson",
     author_email="",  # Add email if desired
     description="Pure Python OpenFace 2.2 AU extraction with PyMTCNN face detection and CLNF refinement",
