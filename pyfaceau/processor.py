@@ -185,16 +185,22 @@ class OpenFaceProcessor:
 
     def clear_cache(self):
         """
-        Clear cached data and reset running median to free memory between videos.
+        Clear cached data and reset all per-video state to free memory and
+        prevent inter-video contamination.
 
         Clears:
         - stored_features list (can be up to 56 MB for long videos)
         - running median histograms
         - face tracking cache
         - CLNF temporal state
+        - OnlineAUCorrection prediction histogram + correction offsets
         - MPS/CUDA GPU memory
 
-        This should be called between videos to prevent memory accumulation.
+        This should be called between videos to prevent memory accumulation
+        AND to prevent the OnlineAUCorrection histogram from saturating
+        across long batches (1.3.12 and earlier missed that reset, which
+        caused AU values to clamp toward zero after ~40 videos in a single
+        OpenFaceProcessor instance).
         """
         if hasattr(self, 'pipeline') and self.pipeline is not None:
             # Clear stored features (two-pass processing cache)
@@ -204,6 +210,21 @@ class OpenFaceProcessor:
             # Reset running median tracker
             if hasattr(self.pipeline, 'running_median') and self.pipeline.running_median is not None:
                 self.pipeline.running_median.reset()
+
+            # Reset OnlineAUCorrection histogram + per-AU correction offsets.
+            # WITHOUT this reset, the per-AU prediction_corr_histogram
+            # accumulates across every frame of every video processed by
+            # this OpenFaceProcessor instance. After ~160k frames
+            # (~40 typical videos x 2 sides), `_recompute_correction()`
+            # derives correction offsets large enough that subsequent
+            # `correct()` calls clamp every AU prediction toward zero --
+            # a silent failure mode (`success=True` is still reported per
+            # frame). Adding the reset here eliminates the bug for all
+            # callers without requiring per-call-site workarounds.
+            if (hasattr(self.pipeline, 'online_au_correction')
+                    and self.pipeline.online_au_correction is not None
+                    and hasattr(self.pipeline.online_au_correction, 'reset')):
+                self.pipeline.online_au_correction.reset()
 
             # Clear face tracking cache
             if hasattr(self.pipeline, 'cached_bbox'):
