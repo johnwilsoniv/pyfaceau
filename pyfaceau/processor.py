@@ -197,10 +197,21 @@ class OpenFaceProcessor:
         - MPS/CUDA GPU memory
 
         This should be called between videos to prevent memory accumulation
-        AND to prevent the OnlineAUCorrection histogram from saturating
-        across long batches (1.3.12 and earlier missed that reset, which
-        caused AU values to clamp toward zero after ~40 videos in a single
-        OpenFaceProcessor instance).
+        AND to prevent inter-video state contamination. Two historical
+        reset bugs are fixed:
+
+        - v1.3.13 added the OnlineAUCorrection reset; without it the per-AU
+          prediction histogram saturated after ~40 videos and clamped
+          subsequent predictions to zero (silent AU=0 bug in long batches).
+
+        - v1.3.14 fixed the CLNF reset, which had been silently failing
+          since v1.3.8 due to a wrong attribute lookup
+          (`pipeline.clnf` instead of `pipeline.landmark_detector`). With
+          the bug, CLNF temporal state carried over from one video to the
+          next; landmark refinement on the new video's first frame was
+          seeded with the previous video's last-frame landmarks, often
+          driving CLNF into a wrong local minimum and corrupting AU
+          intensities for the second-and-later video in any sequence.
         """
         if hasattr(self, 'pipeline') and self.pipeline is not None:
             # Clear stored features (two-pass processing cache)
@@ -232,12 +243,27 @@ class OpenFaceProcessor:
                 self.pipeline.detection_failures = 0
                 self.pipeline.frames_since_detection = 0
 
-            # Reset CLNF temporal state and clear GPU caches
-            if hasattr(self.pipeline, 'clnf') and self.pipeline.clnf is not None:
-                self.pipeline.clnf.reset_temporal_state()
+            # Reset CLNF temporal state and clear GPU caches.
+            # Bugfix (v1.3.14): the pipeline exposes the CLNF instance as
+            # `landmark_detector` (set in pipeline.py:268, populated at
+            # pipeline.py:349). The earlier `self.pipeline.clnf` lookup was
+            # always None/missing, so this whole block silently no-op'd via
+            # the hasattr guard and CLNF temporal state was NEVER reset
+            # between videos in v1.3.8..v1.3.13. That caused the next video's
+            # first-frame landmarks to be seeded with the previous video's
+            # last-frame landmarks; when the two faces don't align, CLNF
+            # fails to converge and downstream HOG/geom features (and AU
+            # intensities) are corrupted - severely for the second-and-later
+            # video in any sequence. See PYFACEAU_CLNF_RESET_BUG.md for the
+            # full diagnosis and pilot11g_proper_reset_canary_PTNE.py for
+            # empirical verification (broken: mean r vs C++ = -0.06; fixed:
+            # mean r = 0.99).
+            if hasattr(self.pipeline, 'landmark_detector') and self.pipeline.landmark_detector is not None:
+                if hasattr(self.pipeline.landmark_detector, 'reset_temporal_state'):
+                    self.pipeline.landmark_detector.reset_temporal_state()
                 # Clear GPU memory caches (added in pyclnf 0.3.3)
-                if hasattr(self.pipeline.clnf, 'clear_gpu_cache'):
-                    self.pipeline.clnf.clear_gpu_cache()
+                if hasattr(self.pipeline.landmark_detector, 'clear_gpu_cache'):
+                    self.pipeline.landmark_detector.clear_gpu_cache()
 
         # Release GPU memory (MPS for Apple Silicon, CUDA for NVIDIA)
         try:
