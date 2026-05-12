@@ -5,7 +5,7 @@ A complete Python implementation of OpenFace 2.2's AU extraction pipeline
 with high-performance parallel processing support and CLNF landmark refinement.
 """
 
-__version__ = "1.3.14"
+__version__ = "1.3.15"
 
 # Weight management functions can be imported without heavy dependencies
 from .download_weights import (

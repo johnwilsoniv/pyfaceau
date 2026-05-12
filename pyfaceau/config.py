@@ -63,19 +63,50 @@ AU_CONFIG = {
     'max_val': 5.0,                  # C++ default
     'cutoff_ratio': 0.10,            # 10th percentile baseline
     'min_frames': 10,                # Minimum frames before correction
-    'skip_au17_cutoff': True,        # AU17 exception (unusual weight distribution)
-    'apply_online_dyn_shift': False,  # Online 10% shift (no impact in testing)
+    'skip_au17_cutoff': False,       # v1.3.15: was True; see note below
+    'apply_online_dyn_shift': False, # Online 10% shift (no impact in testing)
 
     # Two-pass processing
     'max_stored_frames': 3000,       # OpenFace default for re-prediction
 
     # AU-specific cutoff overrides
-    # NOTE: With the fix to include zeros in cutoff calculation (matching C++),
-    # most overrides are no longer needed. Only keep AU26_r which has unusual behavior.
-    'cutoff_overrides': {
-        'AU26_r': 0.12,              # Original: 0.30 -> 0.9317 correlation (best achievable)
-    },
+    # v1.3.15: AU26 override removed; the model's stored cutoff (0.30) now
+    # applies, matching C++ FaceAnalyser behavior. The previous 0.12 override
+    # was set in early development before the cutoff calc was fixed to include
+    # zeros (now matching C++); with the include-zeros fix, the stored cutoff
+    # is closer to C++ than the override.
+    'cutoff_overrides': {},
 }
+
+# =============================================================================
+# v1.3.15 cutoff-handling change (config defaults above)
+# =============================================================================
+# Two long-standing tuning overrides for AU17 and AU26 are reverted to match
+# the C++ FaceAnalyser cutoff behavior:
+#
+#   1. skip_au17_cutoff: True  ->  False   (now applies model's stored 0.20)
+#   2. cutoff_overrides[AU26_r]: 0.12  ->  removed  (now applies stored 0.30)
+#
+# Empirical justification: across the 20-canary windows-cuda goldens, applying
+# the stored cutoffs improves Pearson r and dramatically reduces MAE vs the
+# C++ OpenFace 2.2 reference:
+#
+#   AU17_r:  mean r 0.929 -> 0.936   MAE 0.293 -> 0.183   intercept +0.126 -> -0.016
+#   AU26_r:  mean r 0.950 -> 0.953   MAE 0.200 -> 0.137   intercept +0.135 -> +0.054
+#
+# Per-canary: AU17 improves on 7 of 20 (some by +0.04 r, MAE -89%), is unchanged
+# on 11, mildly worsens on 2 (delta r in [-0.011, -0.002]; MAE goes DOWN on
+# both worsening cases).
+#
+# Why the old defaults existed: the original notes pointed at "unusual weight
+# distribution" for AU17 and "best achievable correlation" of 0.93 for AU26 at
+# 0.12. Both predate the include-zeros fix to the cutoff percentile calc; the
+# new defaults are correct now that the calc itself matches C++.
+#
+# To revert (e.g., for downstream code that relied on the old behavior):
+#   from pyfaceau.config import AU_CONFIG
+#   AU_CONFIG['skip_au17_cutoff'] = True
+#   AU_CONFIG['cutoff_overrides']['AU26_r'] = 0.12
 
 # =============================================================================
 # Running Median Tracker Configuration
