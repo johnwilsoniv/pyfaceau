@@ -204,6 +204,8 @@ class FullPythonAUPipeline:
         use_nnclnf: str = 'pyclnf',  # NNCLNF is defunct, always use pyclnf
         max_clnf_iterations: int = CLNF_CONFIG['max_iterations'],
         clnf_convergence_threshold: float = CLNF_CONFIG['convergence_threshold'],
+        force_au_model_type: str | None = None,
+        dual_au_mode: bool = False,
         debug_mode: bool = False,
         verbose: bool = True
     ):
@@ -225,6 +227,22 @@ class FullPythonAUPipeline:
             use_nnclnf: DEPRECATED - always uses pyclnf (NNCLNF is defunct)
             max_clnf_iterations: Maximum CLNF optimization iterations (default: 10)
             clnf_convergence_threshold: CLNF convergence threshold in pixels (default: 0.01)
+            force_au_model_type: Optional override of per-AU model loading.
+                'static'  -> force all AUs to use static SVR models (no running
+                             median subtraction; no cutoff adjustment).
+                'dynamic' -> force all AUs to use dynamic SVR models.
+                None      -> default; load recommended mixed config.
+            dual_au_mode: If True, the pipeline emits BOTH default-mode AND
+                forced-static AU predictions on every frame, in a single pass.
+                Output CSV has both an "AU17_r" column (default-mode) and an
+                "AU17_r_static" column (forced-static) for each AU. Useful for
+                phenotype work that needs to compare a per-subject-normalized
+                view to a tone-preserving view without paying for two full
+                pipeline passes -- the expensive face / CLNF / HOG / geom work
+                runs once and only the cheap SVR matmul is duplicated
+                (~5-10% added per-frame cost). Mutually exclusive with
+                force_au_model_type (which forces a single-mode emit).
+                Default: False.
             debug_mode: Enable debug mode for diagnostics (default: False)
             verbose: Print progress messages (default: True)
         """
@@ -252,6 +270,33 @@ class FullPythonAUPipeline:
             'max_clnf_iterations': max_clnf_iterations,
             'clnf_convergence_threshold': clnf_convergence_threshold,
         }
+        # Pilot 11 PTNE: optional override of AU model type loading.
+        # 'static' forces all AUs to use static models (no running median
+        # subtraction at predict time). Default None preserves recommended
+        # per-AU mixed config.
+        self.force_au_model_type = force_au_model_type
+
+        # Pilot 15 PTNE: optional dual-mode AU prediction. When True, the
+        # pipeline loads BOTH the default (recommended per-AU mixed) model
+        # set AND a forced-static model set, runs predictions through both
+        # on each frame, and emits two columns per AU in the output CSV:
+        #   AU17_r          -- default-mode prediction (running median
+        #                      subtracted for dynamic AUs, cutoff applied
+        #                      in finalize_predictions)
+        #   AU17_r_static   -- static-mode prediction (no median subtraction,
+        #                      no cutoff)
+        # The expensive frame work (face detect / CLNF / HOG / geom) runs
+        # ONCE per frame; only the cheap SVR matmul is duplicated. Output
+        # is the union of both column sets in a single CSV.
+        # Mutually exclusive with force_au_model_type != None -- if the user
+        # has explicitly forced a single mode, dual emission is redundant.
+        if dual_au_mode and force_au_model_type is not None:
+            raise ValueError(
+                "dual_au_mode=True is mutually exclusive with "
+                "force_au_model_type. Pass dual_au_mode=True alone to get "
+                "both default and static AU columns in one pass."
+            )
+        self.dual_au_mode = dual_au_mode
 
         # Components will be initialized on first use (in worker thread if CoreML)
         self._components_initialized = False
@@ -396,6 +441,7 @@ class FullPythonAUPipeline:
             self.au_models = model_parser.load_all_models(
                 use_recommended=True,
                 use_combined=True,
+                force_model_type=self.force_au_model_type,
                 verbose=self.verbose
             )
             if self.verbose:
@@ -406,6 +452,26 @@ class FullPythonAUPipeline:
                 self.batched_au_predictor = BatchedAUPredictor(self.au_models)
                 if self.verbose:
                     safe_print(f"Batched AU predictor enabled (2-5x faster)")
+
+            # Dual-mode (pilot 15 PTNE): load a SECOND model set forced to
+            # static for parallel prediction. We reuse the same model_parser
+            # so the file lookups are cheap; the SVR matmul on the same HOG
+            # features is the only added per-frame work (~5-10% of frame time).
+            self.static_au_models = None
+            self.static_au_predictor = None
+            if self.dual_au_mode:
+                if self.verbose:
+                    safe_print("Dual AU mode: loading forced-static model set ...")
+                self.static_au_models = model_parser.load_all_models(
+                    use_recommended=True,
+                    use_combined=True,
+                    force_model_type='static',
+                    verbose=False,
+                )
+                if self.use_batched_predictor:
+                    self.static_au_predictor = BatchedAUPredictor(self.static_au_models)
+                if self.verbose:
+                    safe_print(f"  loaded {len(self.static_au_models)} static AU models")
             if self.verbose:
                 safe_print("")
 
@@ -1018,11 +1084,31 @@ class FullPythonAUPipeline:
             running_median: Combined running median (4702,)
 
         Returns:
-            Dictionary of AU predictions {AU_name: intensity}
+            Dictionary of AU predictions {AU_name: intensity}.
+            When self.dual_au_mode is True the dict also contains the static-
+            mode prediction for every AU, keyed with a "_static" suffix
+            (e.g. 'AU17_r_static'). Static-mode columns are NOT median-
+            subtracted and are NOT cutoff-adjusted in finalize_predictions
+            (the cutoff loop there skips columns not in self.au_models).
         """
         # Use batched predictor if available (2-5x faster)
         if self.use_batched_predictor and self.batched_au_predictor is not None:
-            return self.batched_au_predictor.predict(hog_features, geom_features, running_median)
+            predictions = self.batched_au_predictor.predict(
+                hog_features, geom_features, running_median
+            )
+            if self.dual_au_mode and self.static_au_predictor is not None:
+                static_preds = self.static_au_predictor.predict(
+                    hog_features, geom_features, running_median
+                )
+                # Suffix the static-mode keys so they don't collide with the
+                # default-mode predictions. Caller-side downstream code (CSV
+                # writer, finalize_predictions) treats them as additional
+                # AU columns; the cutoff loop in finalize_predictions skips
+                # them automatically because the suffixed names aren't in
+                # self.au_models.
+                for au_name, val in static_preds.items():
+                    predictions[f'{au_name}_static'] = val
+            return predictions
 
         # Fallback to sequential prediction
         predictions = {}
@@ -1030,23 +1116,22 @@ class FullPythonAUPipeline:
         # Construct full feature vector
         full_vector = np.concatenate([hog_features, geom_features])
 
-        for au_name, model in self.au_models.items():
-            is_dynamic = (model['model_type'] == 'dynamic')
+        def _predict_one_set(models, out_dict, key_suffix=''):
+            for au_name, model in models.items():
+                is_dynamic = (model['model_type'] == 'dynamic')
+                if is_dynamic:
+                    centered = full_vector - model['means'].flatten() - running_median
+                else:
+                    centered = full_vector - model['means'].flatten()
+                pred = np.dot(centered.reshape(1, -1),
+                              model['support_vectors']) + model['bias']
+                pred = float(pred[0, 0])
+                pred = np.clip(pred, 0.0, 5.0)
+                out_dict[f'{au_name}{key_suffix}'] = pred
 
-            # Center features
-            if is_dynamic:
-                centered = full_vector - model['means'].flatten() - running_median
-            else:
-                centered = full_vector - model['means'].flatten()
-
-            # SVR prediction
-            pred = np.dot(centered.reshape(1, -1), model['support_vectors']) + model['bias']
-            pred = float(pred[0, 0])
-
-            # Clamp to [0, 5]
-            pred = np.clip(pred, 0.0, 5.0)
-
-            predictions[au_name] = pred
+        _predict_one_set(self.au_models, predictions, '')
+        if self.dual_au_mode and self.static_au_models is not None:
+            _predict_one_set(self.static_au_models, predictions, '_static')
 
         return predictions
 
@@ -1104,8 +1189,14 @@ class FullPythonAUPipeline:
         if self.verbose:
             safe_print("  [2/3] Cutoff adjustment...")
 
-        # Apply cutoff adjustment for dynamic models
-        au_cols = [col for col in df.columns if col.startswith('AU') and col.endswith('_r')]
+        # Apply cutoff adjustment for dynamic models.
+        # Note: only default-mode columns end in '_r'. Dual-mode static
+        # columns end in '_r_static' and are intentionally excluded from
+        # cutoff adjustment here (static-mode AUs don't get cutoffs --
+        # the `if au_name not in self.au_models: continue` filter below
+        # would skip them anyway).
+        au_cols = [col for col in df.columns
+                   if col.startswith('AU') and col.endswith('_r')]
 
         for au_col in au_cols:
             au_name = au_col
@@ -1160,8 +1251,16 @@ class FullPythonAUPipeline:
         if self.verbose:
             safe_print("  [3/3] Temporal smoothing...")
 
-        # Apply 3-frame moving average
-        for au_col in au_cols:
+        # Apply 3-frame moving average to ALL AU columns, including dual-mode
+        # '_r_static' columns. (The cutoff loop above intentionally excluded
+        # _r_static columns, but smoothing should treat them the same way
+        # standalone-static-mode treats its non-suffixed '_r' columns --
+        # otherwise dual mode's static output would have an extra source of
+        # drift vs a separate force_au_model_type='static' run.)
+        smoothing_cols = [col for col in df.columns
+                          if col.startswith('AU')
+                          and (col.endswith('_r') or col.endswith('_r_static'))]
+        for au_col in smoothing_cols:
             smoothed = df[au_col].rolling(window=3, center=True, min_periods=1).mean()
             df[au_col] = smoothed
 
