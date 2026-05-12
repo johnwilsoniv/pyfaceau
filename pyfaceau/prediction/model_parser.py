@@ -203,7 +203,10 @@ class OF22ModelParser:
 
         return model
 
-    def load_all_models(self, use_recommended: bool = True, use_combined: bool = True, verbose: bool = False) -> Dict[str, Dict]:
+    def load_all_models(self, use_recommended: bool = True,
+                        use_combined: bool = True,
+                        force_model_type: str | None = None,
+                        verbose: bool = False) -> Dict[str, Dict]:
         """
         Load all available AU models
 
@@ -212,6 +215,14 @@ class OF22ModelParser:
                             from AU_all_best.txt configuration
             use_combined: If True, load from svr_combined (higher quality, trained on
                          combined datasets)
+            force_model_type: If 'static', force all AUs to load STATIC model
+                              (no running median subtraction at predict time).
+                              If 'dynamic', force all to dynamic. If None
+                              (default), uses use_recommended logic.
+                              Added in Pilot 11 PTNE for hypertonicity
+                              experiment - bypasses pyfaceau's per-subject
+                              running median normalization to expose raw
+                              tonic muscle activity.
             verbose: If True, print detailed loading information
 
         Returns:
@@ -222,7 +233,12 @@ class OF22ModelParser:
 
         for au_name in self.available_aus:
             try:
-                use_dynamic = None if use_recommended else True
+                if force_model_type == 'static':
+                    use_dynamic = False
+                elif force_model_type == 'dynamic':
+                    use_dynamic = True
+                else:
+                    use_dynamic = None if use_recommended else True
                 model = self.load_au_model(au_name, use_dynamic=use_dynamic, use_combined=use_combined)
                 models[au_name] = model
                 if verbose:
