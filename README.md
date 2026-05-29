@@ -170,7 +170,7 @@ Per-AU correlations:
 
 ## Requirements
 
-- Python 3.8+
+- Python 3.10-3.12 (3.10 recommended; newer versions lack prebuilt wheels)
 - numpy
 - opencv-python
 - torch
