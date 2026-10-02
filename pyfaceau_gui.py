@@ -202,18 +202,14 @@ class PyFaceAUGUI:
             # Initialize processor
             self.update_progress("Initializing PyFaceAU pipeline...")
 
-            # Find weights directory
+            # Model files: a 'weights' folder next to this script wins;
+            # otherwise the shared OpenFace model folder installed by
+            # `pyfaceau-download-models` is used.
             script_dir = Path(__file__).parent
             weights_dir = script_dir / 'weights'
 
-            if not weights_dir.exists():
-                raise FileNotFoundError(
-                    f"Weights directory not found: {weights_dir}\n"
-                    "Please ensure weights are in the 'weights' subdirectory."
-                )
-
             self.processor = OpenFaceProcessor(
-                weights_dir=str(weights_dir),
+                weights_dir=str(weights_dir) if weights_dir.exists() else None,
                 use_clnf_refinement=self.use_clnf.get(),
                 verbose=False
             )
@@ -252,9 +248,11 @@ class PyFaceAUGUI:
             self.show_results(successful, failed, total_files)
 
         except Exception as e:
+            # Bind the text now: `e` no longer exists when Tk runs the callback.
+            error_text = str(e)
             self.root.after(0, lambda: messagebox.showerror(
                 "Error",
-                f"Failed to initialize pipeline:\n{str(e)}"
+                f"Failed to initialize pipeline:\n{error_text}"
             ))
 
         finally:

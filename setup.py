@@ -105,6 +105,7 @@ setup(
         "console_scripts": [
             "pyfaceau=pyfaceau.processor:main",
             "pyfaceau-gui=pyfaceau_gui:main",
+            "pyfaceau-download-models=pyfaceau.download_models:main",
             "pyfaceau-download-weights=pyfaceau.download_weights:main",
         ],
     },

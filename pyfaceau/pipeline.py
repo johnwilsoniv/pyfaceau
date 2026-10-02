@@ -193,10 +193,10 @@ class FullPythonAUPipeline:
 
     def __init__(
         self,
-        pdm_file: str,
-        au_models_dir: str,
-        triangulation_file: str,
-        patch_expert_file: str,
+        pdm_file: Optional[str] = None,
+        au_models_dir: Optional[str] = None,
+        triangulation_file: Optional[str] = None,
+        patch_expert_file: Optional[str] = None,
         mtcnn_backend: str = 'auto',
         use_calc_params: bool = True,
         track_faces: bool = True,
@@ -220,6 +220,9 @@ class FullPythonAUPipeline:
             au_models_dir: Directory containing AU SVR models
             triangulation_file: Path to triangulation file for masking
             patch_expert_file: Path to CLNF patch expert file
+                (any of these four left as None is taken from the shared
+                OpenFace model folder; see pyfaceau.models.ensure_models,
+                which raises ModelsNotInstalledError if it is not installed)
             mtcnn_backend: PyMTCNN backend ('auto', 'cuda', 'coreml', 'cpu') (default: 'auto')
             use_calc_params: DEPRECATED - pyclnf params are now used instead (default: True)
             track_faces: Use face tracking between frames (default: True)
@@ -247,6 +250,17 @@ class FullPythonAUPipeline:
             verbose: Print progress messages (default: True)
         """
         import threading
+
+        # Model files not given explicitly come from the shared OpenFace model
+        # folder. ensure_models() never downloads unless the OpenFace license
+        # was accepted (OPENFACE_MODELS_ACCEPT_LICENSE=1).
+        if None in (pdm_file, au_models_dir, triangulation_file, patch_expert_file):
+            from pyfaceau.models import ensure_models, model_paths
+            defaults = model_paths(ensure_models())
+            pdm_file = pdm_file or defaults['pdm_file']
+            au_models_dir = au_models_dir or defaults['au_models_dir']
+            triangulation_file = triangulation_file or defaults['triangulation_file']
+            patch_expert_file = patch_expert_file or defaults['patch_expert_file']
 
         self.verbose = verbose
         self.debug_mode = debug_mode
@@ -1298,14 +1312,14 @@ Examples:
     parser.add_argument('--backend', default='auto',
                         choices=['auto', 'cuda', 'coreml', 'cpu', 'onnx'],
                         help='PyMTCNN backend (default: auto)')
-    parser.add_argument('--pfld', default='weights/pfld_cunjian.onnx',
-                        help='PFLD ONNX model path')
-    parser.add_argument('--pdm', default='weights/In-the-wild_aligned_PDM_68.txt',
-                        help='PDM shape model path')
-    parser.add_argument('--au-models', default='weights/AU_predictors',
-                        help='AU models directory')
-    parser.add_argument('--triangulation', default='weights/tris_68_full.txt',
-                        help='Triangulation file path')
+    parser.add_argument('--pfld', default=None,
+                        help='Ignored (kept for compatibility; landmarks come from pyclnf)')
+    parser.add_argument('--pdm', default=None,
+                        help='PDM shape model path (default: shared OpenFace model folder)')
+    parser.add_argument('--au-models', default=None,
+                        help='AU models directory (default: shared OpenFace model folder)')
+    parser.add_argument('--triangulation', default=None,
+                        help='Triangulation file path (default: shared OpenFace model folder)')
 
     args = parser.parse_args()
 
@@ -1317,7 +1331,6 @@ Examples:
     # Initialize pipeline
     try:
         pipeline = FullPythonAUPipeline(
-            pfld_model=args.pfld,
             pdm_file=args.pdm,
             au_models_dir=args.au_models,
             triangulation_file=args.triangulation,

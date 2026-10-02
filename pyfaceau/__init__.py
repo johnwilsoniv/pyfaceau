@@ -7,7 +7,9 @@ with high-performance parallel processing support and CLNF landmark refinement.
 
 __version__ = "1.3.16"
 
-# Weight management functions can be imported without heavy dependencies
+# Model file management can be imported without heavy dependencies.
+# OpenFace's model files are not included; see pyfaceau.models.
+from .models import ensure_models, ModelsNotInstalledError
 from .download_weights import (
     download_weights,
     ensure_weights,
@@ -38,7 +40,10 @@ __all__ = [
     'ParallelAUPipeline',
     'OpenFaceProcessor',
     'process_videos',
-    # Weight management
+    # Model files (OpenFace 2.2.0, downloaded after accepting its license)
+    'ensure_models',
+    'ModelsNotInstalledError',
+    # Weight management (compatibility with pyfaceau <= 1.3)
     'download_weights',
     'ensure_weights',
     'get_weights_dir',

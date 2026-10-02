@@ -12,7 +12,8 @@ import numpy as np
 from pathlib import Path
 from typing import Optional, Callable
 from .pipeline import FullPythonAUPipeline
-from .download_weights import get_weights_dir, ensure_weights, weights_exist
+from .download_weights import ensure_weights
+from .models import model_paths
 
 
 def safe_print(*args, **kwargs):
@@ -68,15 +69,24 @@ class OpenFaceProcessor:
 
         Args:
             device: Unused (kept for API compatibility). PyFaceAU auto-detects.
-            weights_dir: Path to weights directory. If None, searches in:
-                        1. PYFACEAU_WEIGHTS_DIR environment variable
-                        2. Sibling 'weights' directory (for dev installs)
-                        3. ~/.pyfaceau/weights/ (auto-downloaded)
+            weights_dir: Folder with the OpenFace model files. An explicit folder
+                        always wins. If None: the PYFACEAU_WEIGHTS_DIR environment
+                        variable (if it points to a complete folder), otherwise the
+                        shared OpenFace model folder installed by
+                        `pyfaceau-download-models` (see pyfaceau.models).
             use_clnf_refinement: Enable CLNF landmark refinement (default: True)
             num_threads: Unused (kept for API compatibility)
             verbose: Enable verbose logging (default: False)
-            auto_download_weights: Automatically download weights if missing (default: True)
+            auto_download_weights: Ignored since 1.4.0 (kept for compatibility).
+                Model files are never downloaded silently: run
+                `pyfaceau-download-models` once, or set
+                OPENFACE_MODELS_ACCEPT_LICENSE=1 to accept the OpenFace license.
             **kwargs: Additional arguments (ignored for compatibility)
+
+        Raises:
+            ModelsNotInstalledError (a FileNotFoundError): no weights_dir was
+                given and the OpenFace model files are not installed yet; the
+                message explains how to install them.
         """
         self.verbose = verbose
 
@@ -89,20 +99,8 @@ class OpenFaceProcessor:
                     f"Please ensure the weights are downloaded to this location."
                 )
         else:
-            # Use automatic weight discovery/download
-            try:
-                weights_dir = ensure_weights(
-                    auto_download=auto_download_weights,
-                    verbose=verbose
-                )
-            except FileNotFoundError as e:
-                raise FileNotFoundError(
-                    f"PyFaceAU weights not found.\n\n"
-                    f"To download weights, run:\n"
-                    f"  python -m pyfaceau.download_weights\n\n"
-                    f"Or set PYFACEAU_WEIGHTS_DIR environment variable.\n\n"
-                    f"Original error: {e}"
-                )
+            # Shared OpenFace model folder; never downloads without license acceptance
+            weights_dir = ensure_weights()
 
         weights_dir = Path(weights_dir)
 
@@ -112,10 +110,7 @@ class OpenFaceProcessor:
 
         # Initialize the PyFaceAU pipeline (OpenFace-compatible: PyMTCNN → CLNF → AU)
         self.pipeline = FullPythonAUPipeline(
-            pdm_file=str(weights_dir / 'In-the-wild_aligned_PDM_68.txt'),
-            au_models_dir=str(weights_dir / 'AU_predictors'),
-            triangulation_file=str(weights_dir / 'tris_68_full.txt'),
-            patch_expert_file=str(weights_dir / 'svr_patches_0.25_general.txt'),
+            **model_paths(weights_dir),
             mtcnn_backend='auto',  # PyMTCNN for face detection
             use_batched_predictor=True,
             verbose=verbose

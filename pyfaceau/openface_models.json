@@ -1,0 +1,298 @@
+{
+  "schema": 1,
+  "openface_version": "2.2.0",
+  "source": "OpenFace 2.2.0 (github.com/TadasBaltrusaitis/OpenFace, tag OpenFace_2.2.0)",
+  "license": "OpenFace license: academic or non-profit noncommercial research use only",
+  "license_url": "https://github.com/TadasBaltrusaitis/OpenFace/blob/master/OpenFace-license.txt",
+  "note": "pyfaceau does not include these files. They are downloaded from OpenFace's official repository, checked against these SHA-256 values, and stored in the shared cache under originals/<path>. layout_path is where pyfaceau places a copy inside derived/pyfaceau/<converter version>/.",
+  "files": [
+    {
+      "path": "lib/local/FaceAnalyser/AU_predictors/In-the-wild_aligned_PDM_68.txt",
+      "urls": [
+        "https://raw.githubusercontent.com/TadasBaltrusaitis/OpenFace/OpenFace_2.2.0/lib/local/FaceAnalyser/AU_predictors/In-the-wild_aligned_PDM_68.txt"
+      ],
+      "sha256": "b9eafb292b18505b55cdbc5d8ba45413709cd300cf3e7e8d1946cd0f5c5b94b1",
+      "size": 69023,
+      "layout_path": "In-the-wild_aligned_PDM_68.txt"
+    },
+    {
+      "path": "lib/local/FaceAnalyser/AU_predictors/tris_68_full.txt",
+      "urls": [
+        "https://raw.githubusercontent.com/TadasBaltrusaitis/OpenFace/OpenFace_2.2.0/lib/local/FaceAnalyser/AU_predictors/tris_68_full.txt"
+      ],
+      "sha256": "d79b0c786bf497ddf18b97080e5949c67781ca1c017e558374883a1821b17181",
+      "size": 1076,
+      "layout_path": "tris_68_full.txt"
+    },
+    {
+      "path": "lib/local/LandmarkDetector/model/patch_experts/svr_patches_0.25_general.txt",
+      "urls": [
+        "https://raw.githubusercontent.com/TadasBaltrusaitis/OpenFace/OpenFace_2.2.0/lib/local/LandmarkDetector/model/patch_experts/svr_patches_0.25_general.txt"
+      ],
+      "sha256": "a00c6c281808471af093abd8f8cc9eb5f0caa7a3a2ce234c1119f35852c44687",
+      "size": 1128083,
+      "layout_path": "svr_patches_0.25_general.txt"
+    },
+    {
+      "path": "lib/local/FaceAnalyser/AU_predictors/svr_combined/AU_10_static_intensity_comb.dat",
+      "urls": [
+        "https://raw.githubusercontent.com/TadasBaltrusaitis/OpenFace/OpenFace_2.2.0/lib/local/FaceAnalyser/AU_predictors/svr_combined/AU_10_static_intensity_comb.dat"
+      ],
+      "sha256": "f97e1f9dd70810e59e356cdfa5dcceedec184b831f680a01f629467c6930f474",
+      "size": 75268,
+      "layout_path": "AU_predictors/svr_combined/AU_10_static_intensity_comb.dat"
+    },
+    {
+      "path": "lib/local/FaceAnalyser/AU_predictors/svr_combined/AU_12_static_intensity_comb.dat",
+      "urls": [
+        "https://raw.githubusercontent.com/TadasBaltrusaitis/OpenFace/OpenFace_2.2.0/lib/local/FaceAnalyser/AU_predictors/svr_combined/AU_12_static_intensity_comb.dat"
+      ],
+      "sha256": "fd895c3272abb0a3c612d0e9d002cf2fb86b93c79b477126a1ae10f310e6a928",
+      "size": 75268,
+      "layout_path": "AU_predictors/svr_combined/AU_12_static_intensity_comb.dat"
+    },
+    {
+      "path": "lib/local/FaceAnalyser/AU_predictors/svr_combined/AU_14_static_intensity.dat",
+      "urls": [
+        "https://raw.githubusercontent.com/TadasBaltrusaitis/OpenFace/OpenFace_2.2.0/lib/local/FaceAnalyser/AU_predictors/svr_combined/AU_14_static_intensity.dat"
+      ],
+      "sha256": "dce666400f38454807ce2bfb0553b3175eb34ab555db0b2bd0658518d6d9e2d2",
+      "size": 75268,
+      "layout_path": "AU_predictors/svr_combined/AU_14_static_intensity.dat"
+    },
+    {
+      "path": "lib/local/FaceAnalyser/AU_predictors/svr_combined/AU_15_dynamic_intensity_comb.dat",
+      "urls": [
+        "https://raw.githubusercontent.com/TadasBaltrusaitis/OpenFace/OpenFace_2.2.0/lib/local/FaceAnalyser/AU_predictors/svr_combined/AU_15_dynamic_intensity_comb.dat"
+      ],
+      "sha256": "f1dcf770fbd52e102f8e904cb087414b880b7924bb717bb9b791d94a2186bbf1",
+      "size": 75276,
+      "layout_path": "AU_predictors/svr_combined/AU_15_dynamic_intensity_comb.dat"
+    },
+    {
+      "path": "lib/local/FaceAnalyser/AU_predictors/svr_combined/AU_15_static_intensity_comb.dat",
+      "urls": [
+        "https://raw.githubusercontent.com/TadasBaltrusaitis/OpenFace/OpenFace_2.2.0/lib/local/FaceAnalyser/AU_predictors/svr_combined/AU_15_static_intensity_comb.dat"
+      ],
+      "sha256": "2d10fcda0b7cffe6f66348edae70ad6c055e0759ac6c3ce5ce3d567ae724709a",
+      "size": 75268,
+      "layout_path": "AU_predictors/svr_combined/AU_15_static_intensity_comb.dat"
+    },
+    {
+      "path": "lib/local/FaceAnalyser/AU_predictors/svr_combined/AU_17_dynamic_intensity_comb.dat",
+      "urls": [
+        "https://raw.githubusercontent.com/TadasBaltrusaitis/OpenFace/OpenFace_2.2.0/lib/local/FaceAnalyser/AU_predictors/svr_combined/AU_17_dynamic_intensity_comb.dat"
+      ],
+      "sha256": "7dc6a65e21e4c3686517af8c68c741f300781cda7b1ea9c972f3cae968e55c50",
+      "size": 75276,
+      "layout_path": "AU_predictors/svr_combined/AU_17_dynamic_intensity_comb.dat"
+    },
+    {
+      "path": "lib/local/FaceAnalyser/AU_predictors/svr_combined/AU_17_static_intensity_comb.dat",
+      "urls": [
+        "https://raw.githubusercontent.com/TadasBaltrusaitis/OpenFace/OpenFace_2.2.0/lib/local/FaceAnalyser/AU_predictors/svr_combined/AU_17_static_intensity_comb.dat"
+      ],
+      "sha256": "a96b9717bac55fa3055e8278f39bb624ecbd10bd42343d10f574588f1704f09f",
+      "size": 75268,
+      "layout_path": "AU_predictors/svr_combined/AU_17_static_intensity_comb.dat"
+    },
+    {
+      "path": "lib/local/FaceAnalyser/AU_predictors/svr_combined/AU_1_dynamic_intensity_comb.dat",
+      "urls": [
+        "https://raw.githubusercontent.com/TadasBaltrusaitis/OpenFace/OpenFace_2.2.0/lib/local/FaceAnalyser/AU_predictors/svr_combined/AU_1_dynamic_intensity_comb.dat"
+      ],
+      "sha256": "ee09197389d14c15c04239158db550368122d7c57bca16cf47d5a31ab35d78d0",
+      "size": 75276,
+      "layout_path": "AU_predictors/svr_combined/AU_1_dynamic_intensity_comb.dat"
+    },
+    {
+      "path": "lib/local/FaceAnalyser/AU_predictors/svr_combined/AU_1_static_intensity.dat",
+      "urls": [
+        "https://raw.githubusercontent.com/TadasBaltrusaitis/OpenFace/OpenFace_2.2.0/lib/local/FaceAnalyser/AU_predictors/svr_combined/AU_1_static_intensity.dat"
+      ],
+      "sha256": "995201de41d349309d1bb3d0bbbfefa0bbecef72e30fa6dc3a679ccb04b851b4",
+      "size": 75268,
+      "layout_path": "AU_predictors/svr_combined/AU_1_static_intensity.dat"
+    },
+    {
+      "path": "lib/local/FaceAnalyser/AU_predictors/svr_combined/AU_1_static_intensity_comb.dat",
+      "urls": [
+        "https://raw.githubusercontent.com/TadasBaltrusaitis/OpenFace/OpenFace_2.2.0/lib/local/FaceAnalyser/AU_predictors/svr_combined/AU_1_static_intensity_comb.dat"
+      ],
+      "sha256": "969a11366e8e481ce5162c8a543f50e9a3aeeee687c0182c561886712298ee4a",
+      "size": 75268,
+      "layout_path": "AU_predictors/svr_combined/AU_1_static_intensity_comb.dat"
+    },
+    {
+      "path": "lib/local/FaceAnalyser/AU_predictors/svr_combined/AU_20_dynamic_intensity.dat",
+      "urls": [
+        "https://raw.githubusercontent.com/TadasBaltrusaitis/OpenFace/OpenFace_2.2.0/lib/local/FaceAnalyser/AU_predictors/svr_combined/AU_20_dynamic_intensity.dat"
+      ],
+      "sha256": "3bcd6639ee770970f4507344b7ed78b73035d108c41bfe8fad82d64b9ea2af4f",
+      "size": 75276,
+      "layout_path": "AU_predictors/svr_combined/AU_20_dynamic_intensity.dat"
+    },
+    {
+      "path": "lib/local/FaceAnalyser/AU_predictors/svr_combined/AU_20_static_intensity.dat",
+      "urls": [
+        "https://raw.githubusercontent.com/TadasBaltrusaitis/OpenFace/OpenFace_2.2.0/lib/local/FaceAnalyser/AU_predictors/svr_combined/AU_20_static_intensity.dat"
+      ],
+      "sha256": "3575b65364f39aff17a38e4b0d08fa167c166859be11c6f918f43d9b4fe652c9",
+      "size": 75268,
+      "layout_path": "AU_predictors/svr_combined/AU_20_static_intensity.dat"
+    },
+    {
+      "path": "lib/local/FaceAnalyser/AU_predictors/svr_combined/AU_23_dynamic_intensity_comb.dat",
+      "urls": [
+        "https://raw.githubusercontent.com/TadasBaltrusaitis/OpenFace/OpenFace_2.2.0/lib/local/FaceAnalyser/AU_predictors/svr_combined/AU_23_dynamic_intensity_comb.dat"
+      ],
+      "sha256": "415d2fb7b3d4b2a384f584b6081a72497fdabaf1d9bbb13f7b147b8a1fada2b7",
+      "size": 75276,
+      "layout_path": "AU_predictors/svr_combined/AU_23_dynamic_intensity_comb.dat"
+    },
+    {
+      "path": "lib/local/FaceAnalyser/AU_predictors/svr_combined/AU_23_static_intensity_comb.dat",
+      "urls": [
+        "https://raw.githubusercontent.com/TadasBaltrusaitis/OpenFace/OpenFace_2.2.0/lib/local/FaceAnalyser/AU_predictors/svr_combined/AU_23_static_intensity_comb.dat"
+      ],
+      "sha256": "019e8c56b0951969fd8b4f39d740c35ffe53719cbc16589bb65beb1bf316b690",
+      "size": 75268,
+      "layout_path": "AU_predictors/svr_combined/AU_23_static_intensity_comb.dat"
+    },
+    {
+      "path": "lib/local/FaceAnalyser/AU_predictors/svr_combined/AU_25_dynamic_intensity_comb.dat",
+      "urls": [
+        "https://raw.githubusercontent.com/TadasBaltrusaitis/OpenFace/OpenFace_2.2.0/lib/local/FaceAnalyser/AU_predictors/svr_combined/AU_25_dynamic_intensity_comb.dat"
+      ],
+      "sha256": "4e1f4b79e309bbb7104a6ff0ad269790f6c23ae50f8901ed4e5f5772e3cd74e7",
+      "size": 75276,
+      "layout_path": "AU_predictors/svr_combined/AU_25_dynamic_intensity_comb.dat"
+    },
+    {
+      "path": "lib/local/FaceAnalyser/AU_predictors/svr_combined/AU_25_static_intensity.dat",
+      "urls": [
+        "https://raw.githubusercontent.com/TadasBaltrusaitis/OpenFace/OpenFace_2.2.0/lib/local/FaceAnalyser/AU_predictors/svr_combined/AU_25_static_intensity.dat"
+      ],
+      "sha256": "b8110ef45db372507fc3449ff7e273003053794d313473865a1d6a905f132a46",
+      "size": 75268,
+      "layout_path": "AU_predictors/svr_combined/AU_25_static_intensity.dat"
+    },
+    {
+      "path": "lib/local/FaceAnalyser/AU_predictors/svr_combined/AU_26_dynamic_intensity_comb.dat",
+      "urls": [
+        "https://raw.githubusercontent.com/TadasBaltrusaitis/OpenFace/OpenFace_2.2.0/lib/local/FaceAnalyser/AU_predictors/svr_combined/AU_26_dynamic_intensity_comb.dat"
+      ],
+      "sha256": "d1bf66b8d31e26ca2fc4d2b9223535563eefdfe88ccbd0d9a2372cd7958d2882",
+      "size": 75276,
+      "layout_path": "AU_predictors/svr_combined/AU_26_dynamic_intensity_comb.dat"
+    },
+    {
+      "path": "lib/local/FaceAnalyser/AU_predictors/svr_combined/AU_26_static_intensity_comb.dat",
+      "urls": [
+        "https://raw.githubusercontent.com/TadasBaltrusaitis/OpenFace/OpenFace_2.2.0/lib/local/FaceAnalyser/AU_predictors/svr_combined/AU_26_static_intensity_comb.dat"
+      ],
+      "sha256": "2d7c1a8fd1a964c4091af39c5c4b94b7840e8df9d0501aaefb8c2f32236806c1",
+      "size": 75268,
+      "layout_path": "AU_predictors/svr_combined/AU_26_static_intensity_comb.dat"
+    },
+    {
+      "path": "lib/local/FaceAnalyser/AU_predictors/svr_combined/AU_2_dynamic_intensity_comb.dat",
+      "urls": [
+        "https://raw.githubusercontent.com/TadasBaltrusaitis/OpenFace/OpenFace_2.2.0/lib/local/FaceAnalyser/AU_predictors/svr_combined/AU_2_dynamic_intensity_comb.dat"
+      ],
+      "sha256": "d47d0444f225528f70a66d57634a1d6127dab902a3a54104ff7fa6f0c0f2f94b",
+      "size": 75276,
+      "layout_path": "AU_predictors/svr_combined/AU_2_dynamic_intensity_comb.dat"
+    },
+    {
+      "path": "lib/local/FaceAnalyser/AU_predictors/svr_combined/AU_2_static_intensity_comb.dat",
+      "urls": [
+        "https://raw.githubusercontent.com/TadasBaltrusaitis/OpenFace/OpenFace_2.2.0/lib/local/FaceAnalyser/AU_predictors/svr_combined/AU_2_static_intensity_comb.dat"
+      ],
+      "sha256": "99c30b5abd61c0665e4687cf8b60b80d5406c2fe570c0e1c3a399889ab698790",
+      "size": 75268,
+      "layout_path": "AU_predictors/svr_combined/AU_2_static_intensity_comb.dat"
+    },
+    {
+      "path": "lib/local/FaceAnalyser/AU_predictors/svr_combined/AU_45_dynamic_intensity_comb.dat",
+      "urls": [
+        "https://raw.githubusercontent.com/TadasBaltrusaitis/OpenFace/OpenFace_2.2.0/lib/local/FaceAnalyser/AU_predictors/svr_combined/AU_45_dynamic_intensity_comb.dat"
+      ],
+      "sha256": "2b69232af9fc7cd1014623b53fb36a20a4a3b0f6ee2388583ad4bc383f6e356d",
+      "size": 75276,
+      "layout_path": "AU_predictors/svr_combined/AU_45_dynamic_intensity_comb.dat"
+    },
+    {
+      "path": "lib/local/FaceAnalyser/AU_predictors/svr_combined/AU_45_static_intensity_comb.dat",
+      "urls": [
+        "https://raw.githubusercontent.com/TadasBaltrusaitis/OpenFace/OpenFace_2.2.0/lib/local/FaceAnalyser/AU_predictors/svr_combined/AU_45_static_intensity_comb.dat"
+      ],
+      "sha256": "7a87cbe04e2cbca5176ab1c1ed7f3a253fde0686defb018ebe159b4f51cb957f",
+      "size": 75268,
+      "layout_path": "AU_predictors/svr_combined/AU_45_static_intensity_comb.dat"
+    },
+    {
+      "path": "lib/local/FaceAnalyser/AU_predictors/svr_combined/AU_4_static_intensity_comb.dat",
+      "urls": [
+        "https://raw.githubusercontent.com/TadasBaltrusaitis/OpenFace/OpenFace_2.2.0/lib/local/FaceAnalyser/AU_predictors/svr_combined/AU_4_static_intensity_comb.dat"
+      ],
+      "sha256": "40944f7bdb63506a01347edacb113d7f3073a82d926a782b264a5cbfde2127c6",
+      "size": 75268,
+      "layout_path": "AU_predictors/svr_combined/AU_4_static_intensity_comb.dat"
+    },
+    {
+      "path": "lib/local/FaceAnalyser/AU_predictors/svr_combined/AU_5_dynamic_intensity.dat",
+      "urls": [
+        "https://raw.githubusercontent.com/TadasBaltrusaitis/OpenFace/OpenFace_2.2.0/lib/local/FaceAnalyser/AU_predictors/svr_combined/AU_5_dynamic_intensity.dat"
+      ],
+      "sha256": "d9aa0162f10b9d066484095f1d45543fae18f384f4fc3e95ccc7b453a30c04d6",
+      "size": 75276,
+      "layout_path": "AU_predictors/svr_combined/AU_5_dynamic_intensity.dat"
+    },
+    {
+      "path": "lib/local/FaceAnalyser/AU_predictors/svr_combined/AU_5_static_intensity.dat",
+      "urls": [
+        "https://raw.githubusercontent.com/TadasBaltrusaitis/OpenFace/OpenFace_2.2.0/lib/local/FaceAnalyser/AU_predictors/svr_combined/AU_5_static_intensity.dat"
+      ],
+      "sha256": "be0fe3db756c6178a54c62c2a149f1ba242e6c37a67e3205358390f57d9640a4",
+      "size": 75268,
+      "layout_path": "AU_predictors/svr_combined/AU_5_static_intensity.dat"
+    },
+    {
+      "path": "lib/local/FaceAnalyser/AU_predictors/svr_combined/AU_6_static_intensity_comb.dat",
+      "urls": [
+        "https://raw.githubusercontent.com/TadasBaltrusaitis/OpenFace/OpenFace_2.2.0/lib/local/FaceAnalyser/AU_predictors/svr_combined/AU_6_static_intensity_comb.dat"
+      ],
+      "sha256": "3b63e59596ece180bd20757cc59916b27d258b77346a0d01fbae000a00b48408",
+      "size": 75268,
+      "layout_path": "AU_predictors/svr_combined/AU_6_static_intensity_comb.dat"
+    },
+    {
+      "path": "lib/local/FaceAnalyser/AU_predictors/svr_combined/AU_7_static_intensity_comb.dat",
+      "urls": [
+        "https://raw.githubusercontent.com/TadasBaltrusaitis/OpenFace/OpenFace_2.2.0/lib/local/FaceAnalyser/AU_predictors/svr_combined/AU_7_static_intensity_comb.dat"
+      ],
+      "sha256": "a577f1192b954bebec36a88360e15162bb06b76209e574af249ef6f824d9188d",
+      "size": 75268,
+      "layout_path": "AU_predictors/svr_combined/AU_7_static_intensity_comb.dat"
+    },
+    {
+      "path": "lib/local/FaceAnalyser/AU_predictors/svr_combined/AU_9_dynamic_intensity.dat",
+      "urls": [
+        "https://raw.githubusercontent.com/TadasBaltrusaitis/OpenFace/OpenFace_2.2.0/lib/local/FaceAnalyser/AU_predictors/svr_combined/AU_9_dynamic_intensity.dat"
+      ],
+      "sha256": "fc12e797479e02489f8a809d5d81d025bd2e75a9fd7ba8333211a9ac8355341b",
+      "size": 75276,
+      "layout_path": "AU_predictors/svr_combined/AU_9_dynamic_intensity.dat"
+    },
+    {
+      "path": "lib/local/FaceAnalyser/AU_predictors/svr_combined/AU_9_static_intensity.dat",
+      "urls": [
+        "https://raw.githubusercontent.com/TadasBaltrusaitis/OpenFace/OpenFace_2.2.0/lib/local/FaceAnalyser/AU_predictors/svr_combined/AU_9_static_intensity.dat"
+      ],
+      "sha256": "c795e596f5babba317cd1060029747797a0da8451be1c69ff3d4da3dd377965c",
+      "size": 75268,
+      "layout_path": "AU_predictors/svr_combined/AU_9_static_intensity.dat"
+    }
+  ]
+}
