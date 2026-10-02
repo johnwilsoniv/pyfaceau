@@ -45,3 +45,15 @@ privacy, or moral rights may limit how you use the material.
 
 Full legal code available at:
 https://creativecommons.org/licenses/by-nc/4.0/legalcode
+
+================================================================================
+
+Third-party model files (not included)
+
+pyfaceau does not include or redistribute any OpenFace model files. The
+`pyfaceau-download-models` command downloads them from OpenFace's official
+repository only after you accept the OpenFace license. Those files are not
+covered by the license above: they are owned by Carnegie Mellon University and
+licensed under the OpenFace license (academic or non-profit organization
+noncommercial research use only; no redistribution):
+https://github.com/TadasBaltrusaitis/OpenFace/blob/master/OpenFace-license.txt

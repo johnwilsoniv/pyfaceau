@@ -6,59 +6,87 @@ A python-based implementation of OpenFace 2.2's Facial Action Unit extraction pi
 
 ## Installation
 
-### Option 1: Install from GitHub (Recommended for Development)
+Installing pyfaceau takes two steps: install the package, then download the
+OpenFace model files once.
 
-This includes model weights:
-
-```bash
-# Clone repository with weights
-git clone https://github.com/johnwilsoniv/pyfaceau.git
-cd pyfaceau
-
-# Create conda environment (recommended)
-conda create -n pyfaceau python=3.11
-conda activate pyfaceau
-
-# Install in editable mode
-pip install -e .
-```
-
-### Option 2: Install from PyPI
+### Step 1: Install pyfaceau
 
 ```bash
 pip install pyfaceau
 ```
 
-This automatically installs dependencies:
+This also installs the packages pyfaceau needs:
 - [pyclnf](https://github.com/johnwilsoniv/pyclnf) - Facial landmark detection (68 points)
 - [pymtcnn](https://github.com/johnwilsoniv/pymtcnn) - Face detection
 - [pyfhog](https://github.com/johnwilsoniv/pyfhog) - FHOG feature extraction
 
-### Model Weights
+### Step 2: Download the OpenFace model files (one time)
 
-Model weights (~50MB) are downloaded automatically on first use. If auto-download fails, download manually:
-
-```bash
-# Download weights
-python -m pyfaceau.download_weights
-
-# Or after pip install
-pyfaceau-download-weights
-```
-
-Weights are stored in `~/.pyfaceau/weights/`. You can customize this location:
+pyfaceau uses model files from [OpenFace 2.2.0](https://github.com/TadasBaltrusaitis/OpenFace).
+They are **not included** in pyfaceau: they belong to Carnegie Mellon University
+and may only be used for academic or non-profit, non-commercial research.
+To download them, open a terminal and run:
 
 ```bash
-# Set custom weights directory
-export PYFACEAU_WEIGHTS_DIR=/path/to/your/weights
+pyfaceau-download-models
 ```
 
-### Troubleshooting: "PDM file not found"
+The command shows a short summary of the OpenFace license and a link to the
+full text, then asks you to type `YES`. It downloads about 3.4 MB from
+OpenFace's official GitHub page, checks every file, and tells you when it is
+done. You only need to do this once per computer, also after upgrading pyfaceau.
 
-If you see this error:
-1. **First try**: Run `python -m pyfaceau.download_weights`
-2. **Manual fix**: Copy the `weights/` folder from the GitHub repo to `~/.pyfaceau/weights/`
-3. **Alternative**: Set `PYFACEAU_WEIGHTS_DIR` environment variable to point to your weights
+The files are saved in a folder shared with pyclnf and pymtcnn:
+
+| System | Folder |
+|--------|--------|
+| macOS | `~/Library/Application Support/OpenFaceModels/2.2.0/` |
+| Windows | `%LOCALAPPDATA%\OpenFaceModels\2.2.0\` |
+| Linux | `~/.local/share/OpenFaceModels/2.2.0/` (or `$XDG_DATA_HOME`) |
+
+To use another folder, set the environment variable `OPENFACE_MODELS_DIR`
+before running the command and your program (the `2.2.0` sub-folder is added
+for you). On a computer without a terminal prompt (scripts, servers), use
+`pyfaceau-download-models --accept-license`, or set
+`OPENFACE_MODELS_ACCEPT_LICENSE=1` to accept the license; pyfaceau then
+downloads missing files when it starts.
+
+If you already have a folder with the model files, you can keep using it:
+`OpenFaceProcessor(weights_dir="/path/to/weights")` always uses the folder
+you give it.
+
+### Troubleshooting
+
+- **"The OpenFace model files that pyfaceau needs are not installed yet"**: run
+  `pyfaceau-download-models` (Step 2).
+- **`pyfaceau-download-models: command not found`**: run
+  `python -m pyfaceau.download_models` instead, with the same Python you
+  installed pyfaceau into.
+- **Certificate error on macOS** (`CERTIFICATE_VERIFY_FAILED`): open the Python
+  folder in Applications, double-click `Install Certificates.command`, and try
+  again.
+- **Download stopped or failed**: run the command again. Files that were
+  already downloaded and checked are kept.
+
+### Upgrading from pyfaceau 1.3 or earlier
+
+Run `pyfaceau-download-models` once. The old `~/.pyfaceau/weights` folder is
+no longer used and can be deleted. If you used the automatic download of
+earlier versions, you may now see values for AU05, AU09, AU14 and AU20, which
+that download did not include.
+
+### Install from GitHub (for development)
+
+```bash
+git clone https://github.com/johnwilsoniv/pyfaceau.git
+cd pyfaceau
+conda create -n pyfaceau python=3.11
+conda activate pyfaceau
+pip install -e .
+pyfaceau-download-models
+```
+
+The repository does not contain model files either.
 
 ## Quick Start
 
@@ -90,17 +118,12 @@ process_videos(
 
 ```python
 from pyfaceau import FullPythonAUPipeline
-from pathlib import Path
 import cv2
 
-# Initialize pipeline with model paths
-weights_dir = Path("weights")
-pipeline = FullPythonAUPipeline(
-    pdm_file=str(weights_dir / "In-the-wild_aligned_PDM_68.txt"),
-    au_models_dir=str(weights_dir / "AU_predictors"),
-    triangulation_file=str(weights_dir / "tris_68_full.txt"),
-    patch_expert_file=str(weights_dir / "svr_patches_0.25_general.txt")
-)
+# Initialize pipeline (model files come from the folder installed by
+# `pyfaceau-download-models`; you can also pass pdm_file=, au_models_dir=,
+# triangulation_file= and patch_expert_file= yourself)
+pipeline = FullPythonAUPipeline()
 
 # Process single frame
 image = cv2.imread("face.jpg")
@@ -190,4 +213,11 @@ If you use this in research, please cite:
 
 ## License
 
-CC BY-NC 4.0 - Free for non-commercial use with attribution.
+pyfaceau's code: CC BY-NC 4.0 - free for non-commercial use with attribution
+(see [LICENSE](LICENSE)).
+
+OpenFace model files: not included in pyfaceau. `pyfaceau-download-models`
+downloads them from OpenFace after you accept the
+[OpenFace license](https://github.com/TadasBaltrusaitis/OpenFace/blob/master/OpenFace-license.txt)
+(academic or non-profit, non-commercial research only; do not share the files).
+For commercial use, contact Carnegie Mellon University.
