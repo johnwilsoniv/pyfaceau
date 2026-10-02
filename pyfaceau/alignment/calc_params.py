@@ -19,13 +19,12 @@ from scipy import linalg
 import cv2
 import os
 
-# Try to import Cython-optimized rotation update for 99.9% accuracy
+# Try to import Cython-optimized rotation update for 99.9% accuracy.
+# Import it by its package name: adding pyfaceau/ to sys.path made every
+# pyfaceau module (config, models, ...) shadow top-level imports in other
+# packages, e.g. pyclnf's "from models.openface_loader import ...".
 try:
-    import sys
-    from pathlib import Path
-    # Add parent directory to path so we can import cython extensions
-    sys.path.insert(0, str(Path(__file__).parent.parent))
-    from cython_rotation_update import update_rotation_cython
+    from pyfaceau.cython_rotation_update import update_rotation_cython
     CYTHON_AVAILABLE = True
     if os.environ.get('PYFACEAU_VERBOSE', '0') == '1':
         print("Cython rotation update module loaded - targeting 99.9% accuracy")
