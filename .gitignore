@@ -72,3 +72,28 @@ test_output/
 # Comparison/test scripts
 spiga_vs_clnf_comparison.py
 test_venv_310/
+
+# Model files must never be committed. OpenFace's files are licensed for
+# non-commercial research only and may not be redistributed; users download
+# them with `pyfaceau-download-models` after accepting the OpenFace license.
+weights/
+OpenFaceModels/
+*.dat
+*.onnx
+*.pth
+*.pt
+*.mlmodel
+*.mlpackage/
+*.h5
+*.hdf5
+*.npz
+*.npy
+*.pkl
+*.tflite
+*.caffemodel
+*.safetensors
+In-the-wild_aligned_PDM_*.txt
+tris_68*.txt
+svr_patches_*.txt
+cen_patches_*
+ccnf_patches_*

@@ -1,6 +1,7 @@
 # Include documentation and license files
 include README.md
 include LICENSE
+include CHANGELOG.md
 include COMMERCIAL-LICENSE.md
 include requirements.txt
 
@@ -21,9 +22,12 @@ global-exclude *.pyo
 global-exclude __pycache__
 global-exclude .DS_Store
 
-# Include weights for git-based installs (but these are excluded from PyPI sdist)
-# Users installing from git will get weights; PyPI users must download separately
-recursive-include weights *.txt *.dat
+# Never ship model files. OpenFace's files are licensed for non-commercial
+# research only and may not be redistributed; pyfaceau-download-models fetches
+# them from OpenFace after the user accepts the OpenFace license.
+prune weights
+global-exclude *.dat *.onnx *.pth *.pt *.mlmodel *.h5 *.hdf5 *.npz *.npy *.pkl *.tflite *.caffemodel *.safetensors
+global-exclude In-the-wild_aligned_PDM_*.txt tris_68*.txt svr_patches_*.txt cen_patches_* ccnf_patches_*
 
 # Exclude development files
 exclude .gitignore
