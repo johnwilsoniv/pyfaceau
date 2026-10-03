@@ -1,6 +1,6 @@
 # pyfaceau
 
-A python-based implementation of OpenFace 2.2's Facial Action Unit extraction pipeline with an accurate dlib substitute (ptmtcnn, pyclnf).
+A python-based implementation of OpenFace 2.2's Facial Action Unit extraction pipeline with an accurate dlib substitute (pymtcnn, pyclnf).
 
 **Accuracy: r = 0.97 correlation with C++ OpenFace 2.2**
 
@@ -97,7 +97,33 @@ The repository does not contain model files either.
 
 ## Quick Start
 
-### Video Processing (Recommended)
+### From a terminal
+
+```bash
+pyfaceau input.mp4
+```
+
+This measures the 17 action units in every frame of `input.mp4` and saves them
+in `input.csv`, in the folder you are in (see [Output Format](#output-format)).
+To choose the file name, add `-o`:
+
+```bash
+pyfaceau input.mp4 -o results.csv
+```
+
+If you see "command not found", type `python -m pyfaceau input.mp4` instead.
+
+### With a window
+
+```bash
+pyfaceau-gui
+```
+
+opens a small window: add your videos, choose a folder for the results and
+click **Process Videos**. You get one CSV file per video. (If you see "command
+not found", type `python -m pyfaceau.gui` instead.)
+
+### Video Processing in Python
 
 ```python
 from pyfaceau import OpenFaceProcessor
@@ -105,7 +131,7 @@ from pyfaceau import OpenFaceProcessor
 # Initialize processor
 processor = OpenFaceProcessor(verbose=True)
 
-# Process video to CSV (same format as OpenFace)
+# Process the video and save the AU values as a CSV file (see Output Format)
 processor.process_video("input.mp4", "output.csv")
 ```
 
@@ -148,14 +174,16 @@ if result['success']:
 
 ### CSV Output Columns
 
-The output CSV matches OpenFace format:
-- `frame` - Frame number
-- `timestamp` - Time in seconds
-- `confidence` - Detection confidence
-- `success` - Whether face was detected
-- `AU01_r` through `AU45_r` - AU intensities (0.0 - 5.0)
-- `pose_Rx`, `pose_Ry`, `pose_Rz` - Head pose in radians
-- `x_0` through `x_67`, `y_0` through `y_67` - 68 landmark coordinates
+The CSV file has one row per video frame and these columns:
+- `frame` - Frame number, starting at 0
+- `timestamp` - Time of the frame in seconds
+- `success` - `True` if a face was found and measured in this frame, `False` if not
+- `AU01_r`, `AU02_r`, ... `AU45_r` - the intensities of the 17 action units listed
+  below, from 0 (absent) to 5 (maximum). Use them only in rows where `success` is
+  `True`; in the other rows they are empty or not meaningful.
+
+These are the AU intensity columns of OpenFace's output (OpenFace's own CSV has
+more columns, such as landmarks and head pose, which pyfaceau does not write).
 
 ### Action Units
 
@@ -202,7 +230,9 @@ Per-AU correlations:
 
 - Python 3.10-3.12 (3.10 recommended; newer versions lack prebuilt wheels)
 - numpy
-- opencv-python
+- opencv-python 4 (installed automatically). pyfaceau stays on OpenCV 4 on
+  purpose: OpenCV 5 resamples images slightly differently, which changes the AU
+  values (see the [changelog](https://github.com/johnwilsoniv/pyfaceau/blob/main/CHANGELOG.md)).
 - torch
 - scipy
 
