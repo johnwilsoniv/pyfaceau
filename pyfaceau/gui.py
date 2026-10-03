@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 PyFaceAU - GUI Interface for Action Unit Extraction
 
@@ -6,14 +5,15 @@ Provides a simple graphical interface for selecting video files and processing
 them through the PyFaceAU pipeline.
 
 Usage:
-    python pyfaceau_gui.py
+    pyfaceau-gui
+    python -m pyfaceau.gui   # the same, if the command is not found
 """
 
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 from pathlib import Path
 import threading
-from pyfaceau import OpenFaceProcessor
+from .processor import OpenFaceProcessor
 
 
 class PyFaceAUGUI:
@@ -202,14 +202,9 @@ class PyFaceAUGUI:
             # Initialize processor
             self.update_progress("Initializing PyFaceAU pipeline...")
 
-            # Model files: a 'weights' folder next to this script wins;
-            # otherwise the shared OpenFace model folder installed by
-            # `pyfaceau-download-models` is used.
-            script_dir = Path(__file__).parent
-            weights_dir = script_dir / 'weights'
-
+            # Model files: the shared OpenFace model folder installed by
+            # `pyfaceau-download-models` (or PYFACEAU_WEIGHTS_DIR, if set).
             self.processor = OpenFaceProcessor(
-                weights_dir=str(weights_dir) if weights_dir.exists() else None,
                 use_clnf_refinement=self.use_clnf.get(),
                 verbose=False
             )
