@@ -380,3 +380,76 @@ def process_videos(
     safe_print(f"\nProcessing complete. {processed_count} files were processed.")
 
     return processed_count
+
+
+def main(argv: Optional[list] = None) -> int:
+    """The `pyfaceau` command: `pyfaceau VIDEO [-o OUTPUT.csv]`.
+
+    Runs the default pipeline (OpenFaceProcessor) on one video and writes one
+    CSV row per frame: frame, timestamp, success and the 17 AU intensities.
+    Returns 0 on success, 1 if the video could not be processed (or no face
+    was found in any frame), 2 for a usage error.
+    """
+    import argparse
+    import sys
+    from . import __version__
+
+    parser = argparse.ArgumentParser(
+        prog="pyfaceau",
+        description="Measure 17 facial action units (AUs) in a video with pyfaceau's "
+                    "default pipeline and save one CSV row per frame.",
+        epilog="Before the first run, install the OpenFace model files once with "
+               "`pyfaceau-download-models`.",
+    )
+    parser.add_argument("video", help="the video file to process")
+    parser.add_argument("-o", "--output", metavar="OUTPUT.csv",
+                        help="the CSV file to write (default: the video's name with "
+                             ".csv, in the current folder)")
+    parser.add_argument("--version", action="version", version=f"pyfaceau {__version__}")
+    args = parser.parse_args(argv)
+
+    video = Path(args.video)
+    if not video.is_file():
+        parser.error(f"video not found: {video}")
+    output = Path(args.output) if args.output else Path.cwd() / f"{video.stem}.csv"
+
+    def say(text, end="\n"):
+        try:
+            print(text, end=end, file=sys.stderr, flush=True)
+        except (BrokenPipeError, OSError):
+            pass
+
+    capture = cv2.VideoCapture(str(video))
+    readable = capture.isOpened() and capture.read()[0]
+    capture.release()
+    if not readable:
+        say(f"pyfaceau: cannot read any frame from {video}. Is it a video file?")
+        return 1
+
+    show_progress = sys.stderr.isatty()
+
+    def progress(done, total, fps):
+        if show_progress:
+            say(f"\r  frame {done} of {total} ({fps:.1f} frames per second)", end="")
+
+    try:
+        processor = OpenFaceProcessor(verbose=False)
+        say(f"Processing {video.name} ...")
+        faces = processor.process_video(str(video), str(output), progress_callback=progress)
+    except Exception as e:  # ModelsNotInstalledError explains how to install the files
+        if show_progress:
+            say("")
+        say(f"pyfaceau: {e}")
+        return 1
+    if show_progress:
+        say("")
+    if faces == 0:
+        say(f"No face was found in {video.name}. The CSV was still written: {output}")
+        return 1
+    say(f"Done: a face was found in {faces} frames. AU values saved to {output}")
+    return 0
+
+
+if __name__ == "__main__":
+    import sys
+    sys.exit(main())
