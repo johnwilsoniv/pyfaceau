@@ -1,5 +1,51 @@
 # Changelog
 
+## 1.4.1 (2026-10-03)
+
+### What changes for you
+
+- **The `pyfaceau` command works.** In a terminal, type `pyfaceau video.mp4` to
+  measure the 17 action units in every frame of a video. The results are saved
+  as `video.csv` in the folder you are in; to choose the file, type
+  `pyfaceau video.mp4 -o results.csv`. Before, the command stopped with an
+  error.
+- **`pyfaceau-gui` is now a proper part of pyfaceau.** It opens the same
+  window as before, but no longer depends on a loose copy of the GUI script
+  in the folder of the command, which Python does not find in every
+  installation. If the command is not found, `python -m pyfaceau.gui` opens
+  the window too.
+- **pyfaceau stays on OpenCV 4.** Since OpenCV 5 came out, a new installation of
+  pyfaceau got OpenCV 5, which resamples images slightly differently. On
+  OpenFace's sample videos that moves AU intensities by up to 0.54 and
+  landmarks by up to 2.45 pixels, and flips 0.4–0.6% of AU presence flags, so
+  results would depend on the day pyfaceau was installed. pyfaceau now asks
+  for OpenCV 4; if you have OpenCV 5, `pip install --upgrade pyfaceau` puts
+  OpenCV 4 back.
+- pyfaceau now needs pyclnf 0.4.1 (installed automatically), which has the
+  same OpenCV 4 requirement and also works without PyTorch.
+- Your results do not change: with the same OpenCV 4 version, pyfaceau 1.4.1
+  gives exactly the same AU values as 1.4.0.
+- The README now lists the columns the CSV file really has: `frame`,
+  `timestamp`, `success` and the 17 AU intensities (`AU01_r` to `AU45_r`).
+
+### Details
+
+- `pyfaceau VIDEO [-o OUTPUT.csv]` (also `python -m pyfaceau`) runs the default
+  pipeline, `OpenFaceProcessor`, on one video. It shows progress in a
+  terminal, prints the installation steps when the OpenFace model files are
+  missing, and exits with 1 when the video cannot be processed or no frame has
+  a face. The entry point `pyfaceau.processor:main` did not exist before.
+- The GUI moved into the package as `pyfaceau.gui` (`pyfaceau-gui`, also
+  `python -m pyfaceau.gui`). The entry point used to import a top-level module
+  `pyfaceau_gui` that was not part of the package; it was only found because
+  setup.py copied `pyfaceau_gui.py` into the folder of the commands, which
+  Python puts first on its path when a command starts. That loose script (and
+  with it the `pyfaceau_gui.py` command) is no longer installed. The GUI uses
+  the shared model folder (or `PYFACEAU_WEIGHTS_DIR`).
+- `opencv-python>=4.5.0,<5` and `pyclnf>=0.4.1` in pyproject.toml, setup.py and
+  requirements.txt. OpenCV 5's `warpAffine` and `remap` no longer snap sample
+  positions to 1/32 pixel, and no `cv2` flag restores the 4.x behaviour.
+
 ## 1.4.0 (2026-10-02)
 
 ### What changes for you
