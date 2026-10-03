@@ -83,6 +83,8 @@ TRIANGULATION_FILE = "tris_68_full.txt"
 PATCH_EXPERT_FILE = "svr_patches_0.25_general.txt"
 AU_MODELS_DIR = "AU_predictors"
 
+# Downloads are only accepted from OpenFace's official repository at this tag.
+_OFFICIAL_URL_PREFIX = "https://raw.githubusercontent.com/TadasBaltrusaitis/OpenFace/OpenFace_2.2.0/"
 _RETRIES = 4            # attempts per URL
 _TIMEOUT_S = 30         # socket timeout per request
 _LOCK_TIMEOUT_S = 15 * 60
@@ -164,12 +166,20 @@ def load_manifest() -> dict:
     """The list of OpenFace files pyfaceau needs (path, URLs, SHA-256, size)."""
     with open(Path(__file__).with_name(MANIFEST_FILE), "r", encoding="utf-8") as f:
         manifest = json.load(f)
+    _check_manifest(manifest)
+    return manifest
+
+
+def _check_manifest(manifest: dict) -> None:
+    """Reject unsafe paths and any URL outside OpenFace's official repository."""
     for entry in manifest["files"]:
         for key in ("path", "layout_path"):
             parts = entry[key].split("/")
             if entry[key].startswith("/") or ".." in parts or "" in parts:
                 raise ValueError(f"unsafe path in {MANIFEST_FILE}: {entry[key]!r}")
-    return manifest
+        for url in entry["urls"]:
+            if url != _OFFICIAL_URL_PREFIX + entry["path"]:
+                raise ValueError(f"unexpected URL in {MANIFEST_FILE}: {url!r}")
 
 
 def license_accepted(accept_license: bool = False) -> bool:
@@ -271,6 +281,9 @@ def ensure_models(accept_license: bool = False, *, cache_dir=None,
             return ready
         missing = [e for e in manifest["files"] if not _original_ok(root, e)]
         if missing:
+            # Files can disappear while we wait for the lock: ask again before downloading.
+            if not license_accepted(accept_license):
+                raise ModelsNotInstalledError(_not_installed_message(root, missing))
             _download_all(root, missing, progress)
         _derive(root, ready, manifest)
     return ready
@@ -296,9 +309,12 @@ def _not_installed_message(root: Path, missing: List[dict]) -> str:
         "University) and may only be used for academic or non-profit, non-commercial\n"
         f"research. License: {LICENSE_URL}\n"
         "\n"
-        f"To install them ({size}, one time), open a terminal and run:\n"
+        f"To install them ({size} for pyfaceau, one time), open a terminal and run:\n"
         "\n"
         f"    {DOWNLOAD_COMMAND}\n"
+        "\n"
+        "The same command also prepares the files pyclnf and pymtcnn need (up to\n"
+        "about 440 MB in total).\n"
         "\n"
         "If that command is not found, run this instead:\n"
         "\n"
@@ -448,6 +464,7 @@ def _derive(root: Path, ready: Path, manifest: dict) -> None:
             "files": {e["layout_path"]: e["sha256"] for e in manifest["files"]},
         }
         (tmp / STAMP_FILE).write_text(json.dumps(stamp, indent=2) + "\n", encoding="utf-8")
+        os.chmod(tmp, 0o755)  # mkdtemp makes it private; other users may share the cache
         if ready.exists():
             shutil.rmtree(ready)  # incomplete or outdated; we hold the lock
         os.replace(tmp, ready)

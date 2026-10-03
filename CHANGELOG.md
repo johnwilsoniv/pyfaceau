@@ -10,8 +10,16 @@
 - **One-time setup:** after installing or upgrading, open a terminal and run
   `pyfaceau-download-models`. It shows a short summary of the
   [OpenFace license](https://github.com/TadasBaltrusaitis/OpenFace/blob/master/OpenFace-license.txt),
-  asks you to type `YES`, downloads about 3.4 MB from OpenFace's official
-  GitHub page, and checks every file.
+  asks you to type `YES`, and prepares the OpenFace files for pyfaceau and for
+  the two packages it uses, pyclnf and pymtcnn: about 440 MB in total, from
+  OpenFace's official sources, with every file checked.
+- pyfaceau now needs pyclnf 0.4.0 and pymtcnn 1.2.0 (installed automatically).
+  They no longer include OpenFace's files either; the same command prepares
+  theirs.
+- On recent macOS versions, pyfaceau 1.3.x could stop at the first video with
+  "Failed to initialize any backend" when coremltools was not installed.
+  pymtcnn 1.2.0 now falls back to a face detector that works, so this no
+  longer happens.
 - If you skip this step, pyfaceau stops with a message that tells you exactly
   what to run. It never downloads anything without your agreement.
 - Your results do not change: on the same video, pyfaceau 1.4.0 gives exactly
@@ -25,8 +33,16 @@
 ### Details
 
 - New `pyfaceau-download-models` command (also `python -m pyfaceau.download_models`;
-  `--accept-license` skips the question). The old `pyfaceau-download-weights`
-  command now does the same thing.
+  `--accept-license` skips the question). It prepares the files of pyfaceau,
+  pyclnf and pymtcnn in one shared folder; a file needed by more than one
+  package is downloaded once. The old `pyfaceau-download-weights` command now
+  does the same thing.
+- Requires `pyclnf>=0.4.0` and `pymtcnn>=1.2.0` (pyproject.toml, setup.py and
+  requirements.txt). New `coreml` extra (`pip install "pyfaceau[coreml]"`) adds
+  coremltools for pymtcnn's Core ML face detector on Apple Silicon.
+- Downloads are accepted only from OpenFace's official repository, the license
+  agreement is checked again right before downloading, and the prepared folder
+  is readable by other users of a shared model folder.
 - New `pyfaceau.models.ensure_models(accept_license=False, *, cache_dir=None, progress=None)`
   returns the ready model folder, downloading and checking missing files only
   when the license is accepted (`accept_license=True` or

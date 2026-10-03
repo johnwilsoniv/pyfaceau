@@ -5,4 +5,5 @@ scipy>=1.7.0
 onnxruntime>=1.10.0
 numba>=0.56.0
 pyfhog>=0.1.0
-pymtcnn>=0.1.0
+pyclnf>=0.4.0
+pymtcnn>=1.2.0

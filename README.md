@@ -32,11 +32,15 @@ pyfaceau-download-models
 ```
 
 The command shows a short summary of the OpenFace license and a link to the
-full text, then asks you to type `YES`. It downloads about 3.4 MB from
-OpenFace's official GitHub page, checks every file, and tells you when it is
-done. You only need to do this once per computer, also after upgrading pyfaceau.
+full text, then asks you to type `YES`. It then prepares the OpenFace files
+for pyfaceau **and** for the two packages pyfaceau uses, pyclnf (facial
+landmarks) and pymtcnn (face detection): about 440 MB in total, almost all of
+it pyclnf's landmark models. The files come from OpenFace's official GitHub
+page and, for pyclnf's four large files, from the Dropbox or OneDrive links
+OpenFace itself uses. Every file is checked, and the command tells you when it
+is done. You only need to do this once per computer, also after upgrading.
 
-The files are saved in a folder shared with pyclnf and pymtcnn:
+The files are saved in one folder shared by pyfaceau, pyclnf and pymtcnn:
 
 | System | Folder |
 |--------|--------|
@@ -57,8 +61,9 @@ you give it.
 
 ### Troubleshooting
 
-- **"The OpenFace model files that pyfaceau needs are not installed yet"**: run
-  `pyfaceau-download-models` (Step 2).
+- **"The OpenFace model files that pyfaceau needs are not installed yet"**
+  (or the same message for pyclnf or pymtcnn): run `pyfaceau-download-models`
+  (Step 2). It prepares the files of all three packages.
 - **`pyfaceau-download-models: command not found`**: run
   `python -m pyfaceau.download_models` instead, with the same Python you
   installed pyfaceau into.
@@ -66,7 +71,9 @@ you give it.
   folder in Applications, double-click `Install Certificates.command`, and try
   again.
 - **Download stopped or failed**: run the command again. Files that were
-  already downloaded and checked are kept.
+  already downloaded and checked are kept. Behind a firewall or proxy, make
+  sure `raw.githubusercontent.com` and `www.dropbox.com` (or
+  `onedrive.live.com`) can be reached.
 
 ### Upgrading from pyfaceau 1.3 or earlier
 

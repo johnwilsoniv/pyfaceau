@@ -75,8 +75,8 @@ setup(
         "scikit-learn>=1.0.0",
         "tqdm>=4.62.0",
         "pyfhog>=0.1.0",
-        "pyclnf>=0.2.0",
-        "pymtcnn>=1.1.0",  # Cross-platform face detection
+        "pyclnf>=0.4.0",
+        "pymtcnn>=1.2.0",  # Cross-platform face detection
     ],
     extras_require={
         "dev": [
@@ -86,18 +86,18 @@ setup(
         ],
         # Face detection backends
         "cuda": [
-            "pymtcnn[onnx-gpu]>=1.1.0",  # NVIDIA GPU acceleration
+            "pymtcnn[onnx-gpu]>=1.2.0",  # NVIDIA GPU acceleration
         ],
         "coreml": [
-            "pymtcnn[coreml]>=1.1.0",  # Apple Silicon acceleration
+            "pymtcnn[coreml]>=1.2.0",  # Apple Silicon acceleration
             "coremltools>=7.0",
         ],
         "cpu": [
-            "pymtcnn[onnx]>=1.1.0",  # CPU-only face detection
+            "pymtcnn[onnx]>=1.2.0",  # CPU-only face detection
         ],
         # All acceleration options
         "all": [
-            "pymtcnn[all]>=1.1.0",
+            "pymtcnn[all]>=1.2.0",
             "coremltools>=7.0",
         ],
     },

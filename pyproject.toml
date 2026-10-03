@@ -37,8 +37,8 @@ dependencies = [
     "numba>=0.56.0",
     "torch>=2.0.0",  # Required for pyclnf GPU acceleration
     "pyfhog>=0.1.0",
-    "pyclnf>=0.2.0",
-    "pymtcnn>=0.1.0",
+    "pyclnf>=0.4.0",
+    "pymtcnn>=1.2.0",
 ]
 
 [project.optional-dependencies]
@@ -49,6 +49,10 @@ dev = [
 ]
 accel = [
     "onnxruntime-coreml>=1.10.0",
+]
+coreml = [
+    "pymtcnn[coreml]>=1.2.0",  # Apple Silicon acceleration
+    "coremltools>=7.0",
 ]
 training = [
     "torch>=2.0.0",

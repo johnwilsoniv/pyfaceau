@@ -238,3 +238,49 @@ def test_legacy_helpers(env, monkeypatch):
     assert download_weights.get_weights_dir() == ready
     monkeypatch.setenv("PYFACEAU_WEIGHTS_DIR", str(ready))
     assert download_weights.ensure_weights() == ready
+
+
+def test_manifest_only_accepts_openface_urls():
+    manifest = models.load_manifest()  # the real manifest passes
+    assert all(u.startswith("https://raw.githubusercontent.com/TadasBaltrusaitis/OpenFace/OpenFace_2.2.0/")
+               for e in manifest["files"] for u in e["urls"])
+    bad = json.loads(json.dumps(manifest))
+    bad["files"][0]["urls"] = ["https://example.com/" + bad["files"][0]["path"]]
+    with pytest.raises(ValueError):
+        models._check_manifest(bad)
+    bad = json.loads(json.dumps(manifest))
+    bad["files"][0]["urls"] = [models._OFFICIAL_URL_PREFIX + bad["files"][1]["path"]]  # wrong file
+    with pytest.raises(ValueError):
+        models._check_manifest(bad)
+
+
+def test_consent_rechecked_inside_lock(env, monkeypatch):
+    tmp, manifest = env
+    n = len(manifest["files"])
+    calls = {"count": 0}
+
+    def present_then_missing(root, entry):
+        calls["count"] += 1
+        # The check before the lock sees every file; inside the lock one has vanished.
+        return calls["count"] <= n or entry is not manifest_files[0]
+
+    manifest_files = []
+    real_load = models.load_manifest
+
+    def load():
+        m = real_load()
+        manifest_files[:] = m["files"]
+        return m
+
+    monkeypatch.setattr(models, "load_manifest", load)
+    monkeypatch.setattr(models, "_original_ok", present_then_missing)
+    with pytest.raises(models.ModelsNotInstalledError):
+        models.ensure_models(cache_dir=tmp / "cache")
+    assert not (tmp / "cache" / "2.2.0" / "originals").exists()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX permissions")
+def test_ready_folder_is_readable_by_others(env):
+    tmp, _ = env
+    ready = models.ensure_models(True, cache_dir=tmp / "cache")
+    assert ready.stat().st_mode & 0o777 == 0o755

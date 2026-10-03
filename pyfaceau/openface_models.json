@@ -7,9 +7,9 @@
   "note": "pyfaceau does not include these files. They are downloaded from OpenFace's official repository, checked against these SHA-256 values, and stored in the shared cache under originals/<path>. layout_path is where pyfaceau places a copy inside derived/pyfaceau/<converter version>/.",
   "files": [
     {
-      "path": "lib/local/FaceAnalyser/AU_predictors/In-the-wild_aligned_PDM_68.txt",
+      "path": "lib/local/LandmarkDetector/model/pdms/In-the-wild_aligned_PDM_68.txt",
       "urls": [
-        "https://raw.githubusercontent.com/TadasBaltrusaitis/OpenFace/OpenFace_2.2.0/lib/local/FaceAnalyser/AU_predictors/In-the-wild_aligned_PDM_68.txt"
+        "https://raw.githubusercontent.com/TadasBaltrusaitis/OpenFace/OpenFace_2.2.0/lib/local/LandmarkDetector/model/pdms/In-the-wild_aligned_PDM_68.txt"
       ],
       "sha256": "b9eafb292b18505b55cdbc5d8ba45413709cd300cf3e7e8d1946cd0f5c5b94b1",
       "size": 69023,
