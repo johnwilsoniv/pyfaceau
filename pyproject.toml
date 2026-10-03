@@ -28,7 +28,9 @@ classifiers = [
 
 dependencies = [
     "numpy>=1.20.0",
-    "opencv-python>=4.5.0",
+    # OpenCV 5 samples images differently (no 1/32-pixel snapping in warpAffine and remap),
+    # which changes AU values; stay on OpenCV 4 so results do not depend on the install date.
+    "opencv-python>=4.5.0,<5",
     "pandas>=1.3.0",
     "onnxruntime>=1.10.0",
     "scipy>=1.7.0",
@@ -37,7 +39,7 @@ dependencies = [
     "numba>=0.56.0",
     "torch>=2.0.0",  # Required for pyclnf GPU acceleration
     "pyfhog>=0.1.0",
-    "pyclnf>=0.4.0",
+    "pyclnf>=0.4.1",  # 0.4.1 also requires OpenCV 4
     "pymtcnn>=1.2.0",
 ]
 

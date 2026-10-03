@@ -68,14 +68,14 @@ setup(
     python_requires=">=3.10",
     install_requires=[
         "numpy>=1.20.0",
-        "opencv-python>=4.5.0",
+        "opencv-python>=4.5.0,<5",  # OpenCV 5 changes AU values (see CHANGELOG 1.4.1)
         "pandas>=1.3.0",
         "onnxruntime>=1.10.0",
         "scipy>=1.7.0",
         "scikit-learn>=1.0.0",
         "tqdm>=4.62.0",
         "pyfhog>=0.1.0",
-        "pyclnf>=0.4.0",
+        "pyclnf>=0.4.1",
         "pymtcnn>=1.2.0",  # Cross-platform face detection
     ],
     extras_require={
